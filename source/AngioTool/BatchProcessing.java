@@ -23,7 +23,9 @@ public class BatchProcessing
         "tubeness",
         "thresholded",
         "filtered",
-        "overlay"
+        "overlay",
+        "vessel-mask",
+        "overlay-data"
     });
 
     public interface IProgressToken
@@ -359,6 +361,14 @@ public class BatchProcessing
         );
 
         ImageFile.saveImage(inputImage, format, basePath + " result." + format);
+        OverlayDataExporter.export(
+            basePath,
+            params,
+            data,
+            inputImage.width,
+            inputImage.height,
+            inputImage.brightestChannel
+        );
     }
 
     static String resolveOutputPath(

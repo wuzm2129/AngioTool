@@ -606,6 +606,7 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
     {
         ImageFile.releaseImage(imageUi.source);
         imageUi.source = null;
+        analyzerData.nullify();
 
         if (imageUi.drawingImage != null) {
             imageUi.drawingImage.flush();
@@ -766,7 +767,6 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
                         dispatchAnalysisTask(nextParams);
                     }
                     else {
-                        analyzerData.nullify();
                         setUiInteractivity(true);
                     }
                 });
@@ -835,6 +835,16 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         try {
             DataBufferInt imageBuffer = (DataBufferInt)getImageRaster().getDataBuffer();
             ImageFile.saveImage(imageUi.drawingImage, imageBuffer, format, filePath);
+            if (imageUi.currentParams != null && imageUi.currentStats != null) {
+                OverlayDataExporter.export(
+                    filePath.substring(0, extIdx),
+                    imageUi.currentParams,
+                    analyzerData,
+                    imageUi.imgWidth,
+                    imageUi.imgHeight,
+                    imageUi.source.brightestChannel
+                );
+            }
             textSaveImage.setText(filePath);
             labelImageWasSaved.setText("saved");
         }
