@@ -33,6 +33,7 @@ public class AnalyzeSkeleton2
         public IntVector edgesVerts;
         public IntVector edgesPoints;
         public DoubleVector edgesLengths;
+        public DoubleVector edgesDiameters;
 
         public int treeCount;
         //public IntVector triplePointCounts;
@@ -76,6 +77,7 @@ public class AnalyzeSkeleton2
             edgesVerts = resetIntVector(edgesVerts);
             edgesPoints = resetIntVector(edgesPoints);
             edgesLengths = resetDoubleVector(edgesLengths);
+            edgesDiameters = resetDoubleVector(edgesDiameters);
 
             treeCount = 0;
             //triplePointCounts = resetIntVector(triplePointCounts);

@@ -54,6 +54,7 @@ public class Analyzer
     {
         public double convexHullArea;
         public long vesselPixelArea;
+        public double averageVesselDiameter;
 
         // Recycling resources
         public ByteVectorOutputStream analysisImage = new ByteVectorOutputStream();
@@ -278,7 +279,8 @@ public class Analyzer
                 thicknessScratch,
                 analysisImage,
                 inputImage.width,
-                inputImage.height
+                inputImage.height,
+                data.skelResult
             );
             IntBufferPool.release(thicknessScratch);
         }
@@ -296,6 +298,7 @@ public class Analyzer
         stats.vesselMMArea = (double)data.vesselPixelArea * areaScalingFactor;
         stats.vesselPercentageArea = stats.vesselMMArea * 100.0 / stats.allantoisMMArea;
         stats.averageVesselDiameter = averageVesselDiameter;
+        data.averageVesselDiameter = averageVesselDiameter;
         stats.ELacunarityCurve = data.lacunarity.elCurve;
         stats.ELacunarityMedial = data.lacunarity.elMedial;
         stats.FLacunarityCurve = data.lacunarity.flCurve;

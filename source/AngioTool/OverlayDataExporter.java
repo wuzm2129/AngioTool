@@ -63,6 +63,8 @@ public class OverlayDataExporter
             writer.write(",\n");
             writeParameters(writer, params);
             writer.write(",\n");
+            writeMetrics(writer, params, data);
+            writer.write(",\n");
             writePointArray(writer, "convexHull", data.convexHull, 2, 2);
             writer.write(",\n");
             writePointArray(writer, "skeleton", skel.slabList, 3, 2);
@@ -72,6 +74,8 @@ public class OverlayDataExporter
             writePointArray(writer, "junctionVoxels", skel.junctionVoxels, 3, 2);
             writer.write(",\n");
             writeIndexedPointArray(writer, "removedJunctions", skel.removedJunctions, skel.junctionVoxels, 3, 2);
+            writer.write(",\n");
+            writeSegmentArray(writer, "vesselSegments", skel, params, 2);
             writer.write("\n}\n");
         }
         finally {
@@ -85,6 +89,32 @@ public class OverlayDataExporter
         writer.write("    \"width\": " + width + ",\n");
         writer.write("    \"height\": " + height + ",\n");
         writer.write("    \"brightestChannel\": \"" + channelName(brightestChannel) + "\"\n");
+        writer.write("  }");
+    }
+
+    private static void writeMetrics(Writer writer, AnalyzerParameters params, Analyzer.Data data) throws IOException
+    {
+        AnalyzeSkeleton2.Result skel = data.skelResult;
+        double scale = params.shouldApplyLinearScale ? params.linearScalingFactor : 1.0;
+        double areaScale = scale * scale;
+        double totalLengthPixels = sum(skel.totalBranchLengths);
+        double totalLength = totalLengthPixels * scale;
+        int treeCount = skel.treeCount;
+
+        writer.write("  \"metrics\": {\n");
+        writer.write("    \"vesselPixelArea\": " + data.vesselPixelArea + ",\n");
+        writer.write("    \"vesselArea\": " + ((double)data.vesselPixelArea * areaScale) + ",\n");
+        writer.write("    \"convexHullAreaPixels\": " + data.convexHullArea + ",\n");
+        writer.write("    \"convexHullArea\": " + (data.convexHullArea * areaScale) + ",\n");
+        writer.write("    \"treeCount\": " + treeCount + ",\n");
+        writer.write("    \"segmentCount\": " + skel.edgesLengths.size + ",\n");
+        writer.write("    \"junctionCount\": " + skel.isolatedJunctions.size + ",\n");
+        writer.write("    \"endPointCount\": " + (skel.endPoints.size / 3) + ",\n");
+        writer.write("    \"totalLengthPixels\": " + totalLengthPixels + ",\n");
+        writer.write("    \"totalLength\": " + totalLength + ",\n");
+        writer.write("    \"averageSegmentLength\": " + (skel.edgesLengths.size > 0 ? totalLength / (double)skel.edgesLengths.size : 0.0) + ",\n");
+        writer.write("    \"averageVesselDiameter\": " + data.averageVesselDiameter + ",\n");
+        writer.write("    \"averageSegmentDiameter\": " + computeAverageDiameter(skel, scale) + "\n");
         writer.write("  }");
     }
 
@@ -126,6 +156,68 @@ public class OverlayDataExporter
         writer.write("]");
     }
 
+    private static void writeSegmentArray(
+        Writer writer,
+        String name,
+        AnalyzeSkeleton2.Result skel,
+        AnalyzerParameters params,
+        int indent
+    ) throws IOException
+    {
+        String pad = indent(indent);
+        writer.write(pad + "\"" + name + "\": [");
+
+        int count = skel.edgesLengths != null ? skel.edgesLengths.size : 0;
+        double scale = params.shouldApplyLinearScale ? params.linearScalingFactor : 1.0;
+        boolean thicknessComputed = params.shouldComputeThickness && skel.edgesDiameters != null && skel.edgesDiameters.size >= count;
+        for (int i = 0; i < count; i++) {
+            if (i > 0)
+                writer.write(",");
+
+            double lengthPixels = skel.edgesLengths.buf[i];
+            double diameterPixels = thicknessComputed ? skel.edgesDiameters.buf[i] : 0.0;
+            double angleDegrees = computeSegmentAngleDegrees(skel, i);
+
+            writer.write("\n" + pad + "  {");
+            writer.write("\"id\": " + i);
+            writer.write(", \"tree\": " + readIntOrZero(skel.edgesTrees, i));
+            writer.write(", \"lengthPixels\": " + lengthPixels);
+            writer.write(", \"length\": " + (lengthPixels * scale));
+            writer.write(", \"angleDegrees\": ");
+            writer.write(Double.isNaN(angleDegrees) ? "null" : Double.toString(angleDegrees));
+            writer.write(", \"diameterPixels\": ");
+            writer.write(thicknessComputed ? Double.toString(diameterPixels) : "null");
+            writer.write(", \"diameter\": ");
+            writer.write(thicknessComputed ? Double.toString(diameterPixels * scale) : "null");
+            writer.write("}");
+        }
+
+        if (count > 0)
+            writer.write("\n" + pad);
+        writer.write("]");
+    }
+
+    private static double sum(Utils.DoubleVector values)
+    {
+        double result = 0.0;
+        if (values != null) {
+            for (int i = 0; i < values.size; i++)
+                result += values.buf[i];
+        }
+        return result;
+    }
+
+    private static double computeAverageDiameter(AnalyzeSkeleton2.Result skel, double scale)
+    {
+        if (skel.edgesDiameters == null || skel.edgesDiameters.size == 0)
+            return 0.0;
+
+        double total = 0.0;
+        for (int i = 0; i < skel.edgesDiameters.size; i++)
+            total += skel.edgesDiameters.buf[i];
+        return (total / (double)skel.edgesDiameters.size) * scale;
+    }
+
     private static void writeIndexedPointArray(
         Writer writer,
         String name,
@@ -164,6 +256,64 @@ public class OverlayDataExporter
         if (pointSize > 2)
             writer.write(", \"z\": " + points[off + 2]);
         writer.write("}");
+    }
+
+    private static int readIntOrZero(IntVector values, int index)
+    {
+        return values != null && index >= 0 && index < values.size ? values.buf[index] : 0;
+    }
+
+    private static double computeSegmentAngleDegrees(AnalyzeSkeleton2.Result skel, int edgeIndex)
+    {
+        if (skel.edgesPoints == null || skel.slabList == null || edgeIndex < 0 || edgeIndex * 2 + 1 >= skel.edgesPoints.size)
+            return Double.NaN;
+
+        int x1 = segmentEndpointCoordinate(skel, edgeIndex, true, 0);
+        int y1 = segmentEndpointCoordinate(skel, edgeIndex, true, 1);
+        int x2 = segmentEndpointCoordinate(skel, edgeIndex, false, 0);
+        int y2 = segmentEndpointCoordinate(skel, edgeIndex, false, 1);
+        if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0)
+            return Double.NaN;
+
+        double dx = (double)(x2 - x1);
+        double dy = (double)(y2 - y1);
+        if (dx == 0.0 && dy == 0.0)
+            return Double.NaN;
+
+        double angle = Math.toDegrees(Math.atan2(dy, dx));
+        return angle < 0.0 ? angle + 360.0 : angle;
+    }
+
+    private static int segmentEndpointCoordinate(AnalyzeSkeleton2.Result skel, int edgeIndex, boolean start, int coord)
+    {
+        if (skel.edgesVerts == null || skel.edgesPoints == null || edgeIndex * 3 + 2 >= skel.edgesVerts.size)
+            return -1;
+
+        int modeSides = skel.edgesVerts.buf[edgeIndex * 3];
+        int mode = start ? (modeSides >>> 2) : (modeSides & 3);
+        int rawIndex = skel.edgesVerts.buf[edgeIndex * 3 + (start ? 1 : 2)];
+
+        if (mode == AnalyzeSkeleton2.END_POINT) {
+            int off = rawIndex;
+            if (off >= 0 && off + coord < skel.endPoints.size)
+                return skel.endPoints.buf[off + coord];
+        }
+
+        if (mode == AnalyzeSkeleton2.JUNCTION) {
+            int off = rawIndex * 3;
+            if (off >= 0 && off + coord < skel.singleJunctions.size)
+                return skel.singleJunctions.buf[off + coord];
+        }
+
+        int slabStart = skel.edgesPoints.buf[edgeIndex * 2];
+        int nSlabValues = skel.edgesPoints.buf[edgeIndex * 2 + 1];
+        if (nSlabValues <= 0)
+            return -1;
+
+        int off = start ? slabStart : slabStart + nSlabValues - 3;
+        if (off < 0 || off + coord >= skel.slabList.size)
+            return -1;
+        return skel.slabList.buf[off + coord];
     }
 
     private static String indent(int n)

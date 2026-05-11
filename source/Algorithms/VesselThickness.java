@@ -18,15 +18,42 @@ public class VesselThickness
         int height
     ) throws ExecutionException
     {
+        return computeMedianVesselThickness(runner, maxWorkers, points, arraySize, pointSize, scratch, input, width, height, null);
+    }
+
+    public static double computeMedianVesselThickness(
+        ISliceRunner runner,
+        int maxWorkers,
+        int[] points,
+        int arraySize,
+        int pointSize,
+        int[] scratch,
+        byte[] input,
+        int width,
+        int height,
+        AnalyzeSkeleton2.Result skelResult
+    ) throws ExecutionException
+    {
         final int nPoints = arraySize / pointSize;
-        if (nPoints <= 0)
+        if (skelResult != null)
+            skelResult.edgesDiameters.size = 0;
+
+        if (nPoints <= 0) {
+            if (skelResult != null) {
+                int nEdges = skelResult.edgesLengths.size;
+                skelResult.edgesDiameters.resize(nEdges);
+                if (nEdges > 0)
+                    Arrays.fill(skelResult.edgesDiameters.buf, 0, nEdges, 0.0);
+            }
             return 0.0;
+        }
 
         final int thresh = 200;
 
         runner.runSlices(new Step1(scratch, input, width, height, thresh), maxWorkers, height, (height / 4) + 1);
 
         double[] vesselThickness = DoubleBufferPool.acquireAsIs(nPoints);
+        double[] sortedThickness = DoubleBufferPool.acquireAsIs(nPoints);
 
         final int maxDimension = Math.max(width, height);
         final int maxResult = 3 * (maxDimension + 1) * (maxDimension + 1);
@@ -50,16 +77,61 @@ public class VesselThickness
             vesselThickness[i] = result;
         }
 
-        Arrays.sort(vesselThickness, 0, nPoints);
+        if (skelResult != null)
+            computeEdgeDiameters(skelResult, vesselThickness, pointSize);
+
+        System.arraycopy(vesselThickness, 0, sortedThickness, 0, nPoints);
+        Arrays.sort(sortedThickness, 0, nPoints);
         int middle = nPoints / 2;
 
         double thickness = nPoints % 2 == 1 ?
-            vesselThickness[middle] :
-            (vesselThickness[middle - 1] + vesselThickness[middle]) / 2.0;
+            sortedThickness[middle] :
+            (sortedThickness[middle - 1] + sortedThickness[middle]) / 2.0;
 
+        DoubleBufferPool.release(sortedThickness);
         DoubleBufferPool.release(vesselThickness);
 
         return thickness * 2.0;
+    }
+
+    private static void computeEdgeDiameters(AnalyzeSkeleton2.Result skelResult, double[] pointThickness, int pointSize)
+    {
+        int nEdges = skelResult.edgesLengths.size;
+        skelResult.edgesDiameters.resize(nEdges);
+
+        int maxSlabs = 0;
+        for (int i = 0; i < nEdges; i++) {
+            int nSlabs = skelResult.edgesPoints.buf[i * 2 + 1] / pointSize;
+            if (nSlabs > maxSlabs)
+                maxSlabs = nSlabs;
+        }
+
+        double[] edgeThickness = maxSlabs > 0 ? DoubleBufferPool.acquireAsIs(maxSlabs) : null;
+        try {
+            for (int i = 0; i < nEdges; i++) {
+                int slabStart = skelResult.edgesPoints.buf[i * 2] / pointSize;
+                int nSlabs = skelResult.edgesPoints.buf[i * 2 + 1] / pointSize;
+                if (nSlabs <= 0) {
+                    skelResult.edgesDiameters.buf[i] = 0.0;
+                    continue;
+                }
+
+                for (int j = 0; j < nSlabs; j++)
+                    edgeThickness[j] = pointThickness[slabStart + j];
+
+                Arrays.sort(edgeThickness, 0, nSlabs);
+                int middle = nSlabs / 2;
+                double thickness = nSlabs % 2 == 1 ?
+                    edgeThickness[middle] :
+                    (edgeThickness[middle - 1] + edgeThickness[middle]) / 2.0;
+
+                skelResult.edgesDiameters.buf[i] = thickness * 2.0;
+            }
+        }
+        finally {
+            if (edgeThickness != null)
+                DoubleBufferPool.release(edgeThickness);
+        }
     }
 
     static class Step1 implements ISliceCompute
