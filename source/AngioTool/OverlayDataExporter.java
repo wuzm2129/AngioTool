@@ -66,6 +66,8 @@ public class OverlayDataExporter
             writer.write("{\n");
             writeImageInfo(writer, stats, width, height, brightestChannel);
             writer.write(",\n");
+            writeUiParameters(writer, params);
+            writer.write(",\n");
             writeAnalysisParameters(writer, params);
             writer.write(",\n");
             writeParameters(writer, params);
@@ -179,6 +181,83 @@ public class OverlayDataExporter
         writeIntArray(writer, params.brightnessLineSegments);
         writer.write("\n");
         writer.write("  }");
+    }
+
+    private static void writeUiParameters(Writer writer, AnalyzerParameters params) throws IOException
+    {
+        writer.write("  \"uiParameters\": {\n");
+        writeUiAnalysisParameters(writer, params);
+        writer.write(",\n");
+        writeUiColorPreprocessingParameters(writer, params);
+        writer.write(",\n");
+        writeUiOverlayDisplayParameters(writer, params);
+        writer.write("\n");
+        writer.write("  }");
+    }
+
+    private static void writeUiAnalysisParameters(Writer writer, AnalyzerParameters params) throws IOException
+    {
+        writer.write("    \"analysis\": {\n");
+        writer.write("      \"computeLacunarity\": " + params.shouldComputeLacunarity + ",\n");
+        writer.write("      \"computeThickness\": " + params.shouldComputeThickness + ",\n");
+        writer.write("      \"skeletonizer\": \"" + (params.shouldUseFastSkeletonizer ? "Fast (Zha84)" : "Thorough (Lee94)") + "\",\n");
+        writer.write("      \"capSkeletonSteps\": " + params.shouldCapSkelIterations + ",\n");
+        writer.write("      \"maxSkeletonSteps\": " + params.maxSkelIterations + ",\n");
+        writer.write("      \"resizeInputs\": " + params.shouldResizeImage + ",\n");
+        writer.write("      \"resizeInputsPercent\": " + (params.resizingFactor * 100.0) + ",\n");
+        writer.write("      \"applyMeasurementScale\": " + params.shouldApplyLinearScale + ",\n");
+        writer.write("      \"measurementScalePercent\": " + (params.linearScalingFactor * 100.0) + ",\n");
+        writer.write("      \"fillHoles\": " + params.shouldFillHoles + ",\n");
+        writer.write("      \"fillHolesPixels\": " + params.fillHolesValue + ",\n");
+        writer.write("      \"removeParticles\": " + params.shouldRemoveSmallParticles + ",\n");
+        writer.write("      \"removeParticlesPixels\": " + params.removeSmallParticlesThreshold + ",\n");
+        writer.write("      \"fillBrightShapes\": " + params.shouldFillBrightShapes + ",\n");
+        writer.write("      \"maxHoleLevelPercent\": " + (params.brightShapeThresholdFactor * 100.0) + ",\n");
+        writer.write("      \"applyMinBoxness\": " + params.shouldApplyMinBoxness + ",\n");
+        writer.write("      \"minBoxnessPercent\": " + (params.minBoxness * 100.0) + ",\n");
+        writer.write("      \"applyMinAreaLengthRatio\": " + params.shouldApplyMinAreaLength + ",\n");
+        writer.write("      \"minAreaLengthRatio\": " + params.minAreaLengthRatio + ",\n");
+        writer.write("      \"vesselDiameters\": ");
+        writeDoubleArray(writer, params.sigmas);
+        writer.write(",\n");
+        writer.write("      \"minVesselIntensity\": " + params.thresholdLow + ",\n");
+        writer.write("      \"maxVesselIntensity\": " + params.thresholdHigh + "\n");
+        writer.write("    }");
+    }
+
+    private static void writeUiColorPreprocessingParameters(Writer writer, AnalyzerParameters params) throws IOException
+    {
+        writer.write("    \"colorPreprocessing\": {\n");
+        writer.write("      \"transformColors\": " + params.shouldRemapColors + ",\n");
+        writer.write("      \"saturationPercent\": " + (params.saturationFactor * 100.0) + ",\n");
+        writer.write("      \"offColor\": \"" + params.voidRemapColor.toString() + "\",\n");
+        writer.write("      \"targetColor\": \"" + params.targetRemapColor.toString() + "\",\n");
+        writer.write("      \"hueWeight\": " + params.hueTransformWeight + ",\n");
+        writer.write("      \"brightnessWeight\": " + params.brightnessTransformWeight + ",\n");
+        writer.write("      \"brightnessGraph\": ");
+        writeIntArray(writer, params.brightnessLineSegments);
+        writer.write("\n");
+        writer.write("    }");
+    }
+
+    private static void writeUiOverlayDisplayParameters(Writer writer, AnalyzerParameters params) throws IOException
+    {
+        writer.write("    \"overlayDisplay\": {\n");
+        writer.write("      \"outline\": {\"enabled\": " + params.shouldDrawOutline + ", \"color\": \"" + params.outlineColor.toString() + "\", \"size\": " + params.outlineSize + "},\n");
+        writer.write("      \"branches\": {\"enabled\": " + params.shouldDrawBranchPoints + ", \"color\": \"" + params.branchingPointsColor.toString() + "\", \"size\": " + params.branchingPointsSize + "},\n");
+        writer.write("      \"skeleton\": {\"enabled\": " + params.shouldDrawSkeleton + ", \"color\": \"" + params.skeletonColor.toString() + "\", \"size\": " + params.skeletonSize + "},\n");
+        writer.write("      \"convexHull\": {\"enabled\": " + params.shouldDrawConvexHull + ", \"color\": \"" + params.convexHullColor.toString() + "\", \"size\": " + params.convexHullSize + "},\n");
+        writer.write("      \"outputImageMode\": \"");
+        if (!params.shouldIsolateBrightestChannelInOutput)
+            writer.write("Keep Original Colors");
+        else if (params.shouldExpandOutputToGrayScale)
+            writer.write("Convert to Grayscale");
+        else
+            writer.write("Isolate Brightest Channel");
+        writer.write("\",\n");
+        writer.write("      \"isolateBrightestChannelInOutput\": " + params.shouldIsolateBrightestChannelInOutput + ",\n");
+        writer.write("      \"expandOutputToGrayScale\": " + params.shouldExpandOutputToGrayScale + "\n");
+        writer.write("    }");
     }
 
     private static void writeParameters(Writer writer, AnalyzerParameters params) throws IOException

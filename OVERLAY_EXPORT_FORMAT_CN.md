@@ -79,6 +79,7 @@ a.png overlay-data.json
 ```json
 {
   "image": {},
+  "uiParameters": {},
   "analysisParameters": {},
   "overlayParameters": {},
   "metrics": {},
@@ -130,7 +131,149 @@ a.png overlay-data.json
 
 外部工具读取时，可以用 `width` 和 `height` 校验点坐标是否落在图像范围内，也可以用它们创建与 mask 对齐的画布。
 
-## 5. `analysisParameters`
+## 5. `uiParameters`
+
+`uiParameters` 保存主界面上可调整的分析参数、颜色预处理参数和叠加显示参数。这个字段按界面区域分组，便于后续外部工具直接理解“这次分析运行时界面上是怎么设置的”。
+
+该字段不会替代旧的 `analysisParameters` 和 `overlayParameters`。旧字段仍会保留，用于兼容之前的分析脚本；新字段更适合后续按界面语义读取。
+
+顶层结构：
+
+```json
+"uiParameters": {
+  "analysis": {},
+  "colorPreprocessing": {},
+  "overlayDisplay": {}
+}
+```
+
+### 5.1 `uiParameters.analysis`
+
+`analysis` 对应主窗口 `Analysis` 区域。
+
+示例：
+
+```json
+"analysis": {
+  "computeLacunarity": true,
+  "computeThickness": true,
+  "skeletonizer": "Fast (Zha84)",
+  "capSkeletonSteps": true,
+  "maxSkeletonSteps": 25,
+  "resizeInputs": false,
+  "resizeInputsPercent": 100.0,
+  "applyMeasurementScale": false,
+  "measurementScalePercent": 100.0,
+  "fillHoles": false,
+  "fillHolesPixels": 100.0,
+  "removeParticles": false,
+  "removeParticlesPixels": 100.0,
+  "fillBrightShapes": false,
+  "maxHoleLevelPercent": 150.0,
+  "applyMinBoxness": true,
+  "minBoxnessPercent": 9.375,
+  "applyMinAreaLengthRatio": true,
+  "minAreaLengthRatio": 16.0,
+  "vesselDiameters": [12.0],
+  "minVesselIntensity": 15,
+  "maxVesselIntensity": 255
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `computeLacunarity` | boolean | 是否计算 lacunarity 指标。 |
+| `computeThickness` | boolean | 是否计算血管厚度/直径。关闭时每段血管直径可能为 `null`。 |
+| `skeletonizer` | string | 骨架化算法，当前为 `Fast (Zha84)` 或 `Thorough (Lee94)`。 |
+| `capSkeletonSteps` | boolean | 是否限制骨架化最大迭代步数。 |
+| `maxSkeletonSteps` | number | 最大骨架化迭代步数。 |
+| `resizeInputs` | boolean | 是否缩放输入图像。 |
+| `resizeInputsPercent` | number | 输入图像缩放百分比。 |
+| `applyMeasurementScale` | boolean | 是否启用测量尺度换算。 |
+| `measurementScalePercent` | number | 测量尺度百分比。 |
+| `fillHoles` | boolean | 是否填充血管区域孔洞。 |
+| `fillHolesPixels` | number | 填洞阈值，单位为 px。 |
+| `removeParticles` | boolean | 是否移除小颗粒。 |
+| `removeParticlesPixels` | number | 小颗粒移除阈值，单位为 px。 |
+| `fillBrightShapes` | boolean | 是否启用 Max Hole Level 对应的亮区域/孔洞层级处理。 |
+| `maxHoleLevelPercent` | number | Max Hole Level 的界面百分比值。 |
+| `applyMinBoxness` | boolean | 是否启用 Min Boxness 过滤。 |
+| `minBoxnessPercent` | number | Min Boxness 的界面百分比值。 |
+| `applyMinAreaLengthRatio` | boolean | 是否启用 Min Length : Area 过滤。 |
+| `minAreaLengthRatio` | number | Min Length : Area 的比例阈值。 |
+| `vesselDiameters` | number[] | Vessel Diameters list 输入的数值数组。 |
+| `minVesselIntensity` | number | Vessel Intensity range 的最小值。 |
+| `maxVesselIntensity` | number | Vessel Intensity range 的最大值。 |
+
+### 5.2 `uiParameters.colorPreprocessing`
+
+`colorPreprocessing` 对应主窗口 `Transform Colors` 区域。
+
+示例：
+
+```json
+"colorPreprocessing": {
+  "transformColors": false,
+  "saturationPercent": 100.0,
+  "offColor": "FF9900",
+  "targetColor": "FF0000",
+  "hueWeight": 1.0,
+  "brightnessWeight": 1.0,
+  "brightnessGraph": [0, 0, 100, 100]
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `transformColors` | boolean | 是否启用颜色变换。 |
+| `saturationPercent` | number | 饱和度百分比。 |
+| `offColor` | string | Off Color，RGB 十六进制字符串，不带 `#`。 |
+| `targetColor` | string | Target Color，RGB 十六进制字符串，不带 `#`。 |
+| `hueWeight` | number | Hue 权重。 |
+| `brightnessWeight` | number | Brightness 权重。 |
+| `brightnessGraph` | number[] | Brightness Graph 的点数组。 |
+
+### 5.3 `uiParameters.overlayDisplay`
+
+`overlayDisplay` 对应主窗口 `Overlay` 区域。
+
+示例：
+
+```json
+"overlayDisplay": {
+  "outline": {"enabled": true, "color": "FFFF00", "size": 1.0},
+  "branches": {"enabled": true, "color": "0099FF", "size": 4.0},
+  "skeleton": {"enabled": true, "color": "FF0000", "size": 2.0},
+  "convexHull": {"enabled": true, "color": "CCFFFF", "size": 1.0},
+  "outputImageMode": "Convert to Grayscale",
+  "isolateBrightestChannelInOutput": true,
+  "expandOutputToGrayScale": true
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `outline` | object | 血管轮廓显示设置，含 `enabled`、`color`、`size`。 |
+| `branches` | object | 分支点显示设置，含 `enabled`、`color`、`size`。 |
+| `skeleton` | object | 骨架显示设置，含 `enabled`、`color`、`size`。 |
+| `convexHull` | object | 凸包显示设置，含 `enabled`、`color`、`size`。 |
+| `outputImageMode` | string | 输出背景模式，对应界面单选项。 |
+| `isolateBrightestChannelInOutput` | boolean | 是否只保留最亮通道。 |
+| `expandOutputToGrayScale` | boolean | 是否扩展为灰度显示。 |
+
+`outputImageMode` 当前可能值为：
+
+- `"Keep Original Colors"`
+- `"Isolate Brightest Channel"`
+- `"Convert to Grayscale"`
+
+## 6. `analysisParameters`
 
 `analysisParameters` 保存与单图 XLSX 导出中相同的分析参数。它们描述本次血管识别和统计计算所使用的阈值、尺度、颜色变换和骨架化设置。
 
@@ -182,7 +325,7 @@ a.png overlay-data.json
 | `saturationFactor` | `Saturation Factor` | 饱和度因子。 |
 | `brightnessGraph` | `Brightness Graph` | 亮度映射曲线点。 |
 
-## 6. `overlayParameters`
+## 7. `overlayParameters`
 
 `overlayParameters` 保存导出时的叠加显示参数。它们主要用于复现 AngioTool 的叠加绘图效果，而不是血管分析结果本身。
 
@@ -228,7 +371,7 @@ a.png overlay-data.json
 
 颜色字符串不带 `#` 前缀。例如 `"FF0000"` 表示红色。外部工具如果需要 CSS 或 HTML 颜色格式，可以自行转换为 `#FF0000`。
 
-## 7. `metrics`
+## 8. `metrics`
 
 `metrics` 保存整张图层面的统计值，便于外部工具不再从点集重复推算常用指标。
 
@@ -296,7 +439,7 @@ a.png overlay-data.json
 
 如果未在界面中启用线性缩放，`vesselArea`、`convexHullArea`、`totalLength`、`averageSegmentLength` 和 `averageVesselDiameter` 使用像素单位。
 
-## 8. 点集字段的通用约定
+## 9. 点集字段的通用约定
 
 JSON 中的点集字段使用整数坐标。
 
@@ -322,7 +465,7 @@ JSON 中的点集字段使用整数坐标。
 
 在大多数二维分析中，可以用 `x` 和 `y` 把这些点直接画到 mask 或原始图像上。如果只处理二维图像，通常可以忽略 `z`，但建议在自己的分析脚本中显式说明这一点。
 
-## 9. `convexHull`
+## 10. `convexHull`
 
 `convexHull` 是凸包点数组，用于表示包围血管区域的凸包轮廓。
 
@@ -345,7 +488,7 @@ JSON 中的点集字段使用整数坐标。
 
 这个字段是二维点集。外部工具可以用这些点重新绘制凸包边界，或计算凸包面积、周长等指标。
 
-## 9. `skeleton`
+## 11. `skeleton`
 
 `skeleton` 是血管骨架点数组，对应程序内部骨架分析结果中的 `slabList`。
 
@@ -370,7 +513,7 @@ JSON 中的点集字段使用整数坐标。
 
 注意：当前 JSON 导出的是骨架点集合，不直接导出骨架边列表。因此，如果外部工具需要恢复完整图结构，可能需要结合相邻像素规则或自行构建连通关系。
 
-## 10. `branchPoints`
+## 12. `branchPoints`
 
 `branchPoints` 是分支点数组，对应程序最终用于绘制分支点的点。
 
@@ -392,7 +535,7 @@ JSON 中的点集字段使用整数坐标。
 
 该字段由程序内部的分支点索引映射到 `junctionVoxels` 点池后导出。当前实现中，如果遇到非法索引，会跳过对应点。
 
-## 11. `junctionVoxels`
+## 13. `junctionVoxels`
 
 `junctionVoxels` 是骨架分析过程中识别到的 junction voxel 点池。
 
@@ -415,7 +558,7 @@ JSON 中的点集字段使用整数坐标。
 
 可以把它理解为 junction 相关点的基础点池。`branchPoints` 和 `removedJunctions` 都是从这个点池中按索引取点后导出的结果。
 
-## 12. `removedJunctions`
+## 14. `removedJunctions`
 
 `removedJunctions` 是骨架分析过程中被移除或合并处理过的 junction 点。
 
@@ -437,7 +580,7 @@ JSON 中的点集字段使用整数坐标。
 
 该字段同样由索引映射到 `junctionVoxels` 点池后导出。当前叠加绘图逻辑中，这些点也会作为骨架层的补充点参与显示。
 
-## 13. `vesselSegments`
+## 15. `vesselSegments`
 
 `vesselSegments` 是按骨架分支段导出的血管数据。这里的“每段血管”定义为骨架图中一条边，也就是端点、分支点或连接点之间的一段骨架。
 
@@ -482,7 +625,7 @@ JSON 中的点集字段使用整数坐标。
 
 注意：短分支段或端点坐标无法形成有效方向时，`angleDegrees` 会是 `null`。分析参数中关闭血管厚度计算时，`diameterPixels` 和 `diameter` 会是 `null`。如果厚度计算已执行但某段缺少可用于估计直径的内部骨架点，则直径可能为 `0`。
 
-## 14. 推荐读取流程
+## 16. 推荐读取流程
 
 后续使用其他编程工具分析时，建议按以下流程处理：
 
@@ -495,9 +638,10 @@ JSON 中的点集字段使用整数坐标。
 7. 将 `vesselSegments` 作为每段血管的长度、角度和直径数据。
 8. 将 `convexHull`、`skeleton`、`branchPoints` 等字段作为结构化点集。
 9. 如果只是二维分析，对含 `z` 的点明确采用 `x`、`y` 投影。
-10. 如果需要复现可视化效果，再读取 `overlayParameters` 中的颜色和线宽。
+10. 如果需要复现界面设置，优先读取 `uiParameters`。
+11. 如果需要兼容旧脚本，再读取 `analysisParameters` 和 `overlayParameters`。
 
-## 15. Python 读取示例
+## 17. Python 读取示例
 
 下面示例仅说明读取思路，具体库可以按自己的环境替换。
 
@@ -522,6 +666,7 @@ assert mask.shape == (height, width)
 skeleton_xy = [(p["x"], p["y"]) for p in overlay["skeleton"]]
 branch_xy = [(p["x"], p["y"]) for p in overlay["branchPoints"]]
 segments = overlay["vesselSegments"]
+ui_params = overlay["uiParameters"]
 
 vessel_area_pixels = int(mask.sum())
 
@@ -530,21 +675,24 @@ print("skeleton points:", len(skeleton_xy))
 print("branch points:", len(branch_xy))
 print("segments:", len(segments))
 print("first segment diameter:", segments[0]["diameter"] if segments else None)
+print("skeletonizer:", ui_params["analysis"]["skeletonizer"])
 ```
 
-## 16. 注意事项
+## 18. 注意事项
 
 - `overlay-data.json` 不包含血管 mask 的逐像素数据。
 - `vessel-mask.png` 不包含骨架、凸包、分支点等结构化点集。
 - 两个文件需要一起使用，才能同时获得区域数据和结构化绘图数据。
 - 点集数组可能为空。数组为空不一定表示导出失败，也可能是当前图像或参数没有检测到对应结构。
 - `overlayParameters` 主要是显示配置，不应直接当成定量分析结果。
+- `uiParameters` 是按界面分组的参数快照，适合复现实验设置或记录当时用户选择。
+- `analysisParameters` 和 `overlayParameters` 是历史兼容字段，会继续保留。
 - `skeleton` 当前导出点，不导出边；如果只需要每段血管长度、角度、直径，优先使用 `vesselSegments`。
 - `vesselSegments` 导出的是骨架分支段，不一定等同于肉眼理解的一整根连续血管。
 - 颜色字段是不带 `#` 的 RGB 十六进制字符串。
 - 对二维图像，含 `z` 的点通常可以按 `(x, y)` 使用，但建议在分析代码中明确处理规则。
 
-## 17. 两个文件的分工总结
+## 19. 两个文件的分工总结
 
 | 文件 | 数据类型 | 主要用途 |
 | --- | --- | --- |
