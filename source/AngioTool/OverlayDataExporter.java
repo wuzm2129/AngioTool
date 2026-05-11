@@ -10,6 +10,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.text.DateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 public class OverlayDataExporter
 {
@@ -17,13 +20,14 @@ public class OverlayDataExporter
         String basePath,
         AnalyzerParameters params,
         Analyzer.Data data,
+        Analyzer.Stats stats,
         int width,
         int height,
         int brightestChannel
     ) throws IOException
     {
         saveMaskImage(basePath + " vessel-mask.png", data.analysisImage.buf, width, height);
-        saveOverlayJson(basePath + " overlay-data.json", params, data, width, height, brightestChannel);
+        saveOverlayJson(basePath + " overlay-data.json", params, data, stats, width, height, brightestChannel);
     }
 
     private static void saveMaskImage(String absPath, byte[] analysisImage, int width, int height) throws IOException
@@ -49,6 +53,7 @@ public class OverlayDataExporter
         String absPath,
         AnalyzerParameters params,
         Analyzer.Data data,
+        Analyzer.Stats stats,
         int width,
         int height,
         int brightestChannel
@@ -59,11 +64,13 @@ public class OverlayDataExporter
             AnalyzeSkeleton2.Result skel = data.skelResult;
 
             writer.write("{\n");
-            writeImageInfo(writer, width, height, brightestChannel);
+            writeImageInfo(writer, stats, width, height, brightestChannel);
+            writer.write(",\n");
+            writeAnalysisParameters(writer, params);
             writer.write(",\n");
             writeParameters(writer, params);
             writer.write(",\n");
-            writeMetrics(writer, params, data);
+            writeMetrics(writer, params, data, stats);
             writer.write(",\n");
             writePointArray(writer, "convexHull", data.convexHull, 2, 2);
             writer.write(",\n");
@@ -83,16 +90,32 @@ public class OverlayDataExporter
         }
     }
 
-    private static void writeImageInfo(Writer writer, int width, int height, int brightestChannel) throws IOException
+    private static void writeImageInfo(Writer writer, Analyzer.Stats stats, int width, int height, int brightestChannel) throws IOException
     {
+        Date today = new Date();
+        DateFormat dateFormatter = DateFormat.getDateInstance(2, Locale.US);
+        DateFormat timeFormatter = DateFormat.getTimeInstance(2, Locale.US);
+
         writer.write("  \"image\": {\n");
+        writer.write("    \"name\": ");
+        writeJsonString(writer, stats != null ? stats.imageFileName : "null");
+        writer.write(",\n");
+        writer.write("    \"absolutePath\": ");
+        writeJsonString(writer, stats != null ? stats.imageAbsolutePath : "null");
+        writer.write(",\n");
+        writer.write("    \"exportDate\": ");
+        writeJsonString(writer, dateFormatter.format(today));
+        writer.write(",\n");
+        writer.write("    \"exportTime\": ");
+        writeJsonString(writer, timeFormatter.format(today));
+        writer.write(",\n");
         writer.write("    \"width\": " + width + ",\n");
         writer.write("    \"height\": " + height + ",\n");
         writer.write("    \"brightestChannel\": \"" + channelName(brightestChannel) + "\"\n");
         writer.write("  }");
     }
 
-    private static void writeMetrics(Writer writer, AnalyzerParameters params, Analyzer.Data data) throws IOException
+    private static void writeMetrics(Writer writer, AnalyzerParameters params, Analyzer.Data data, Analyzer.Stats stats) throws IOException
     {
         AnalyzeSkeleton2.Result skel = data.skelResult;
         double scale = params.shouldApplyLinearScale ? params.linearScalingFactor : 1.0;
@@ -103,18 +126,58 @@ public class OverlayDataExporter
 
         writer.write("  \"metrics\": {\n");
         writer.write("    \"vesselPixelArea\": " + data.vesselPixelArea + ",\n");
-        writer.write("    \"vesselArea\": " + ((double)data.vesselPixelArea * areaScale) + ",\n");
+        writer.write("    \"vesselArea\": " + (stats != null ? stats.vesselMMArea : (double)data.vesselPixelArea * areaScale) + ",\n");
         writer.write("    \"convexHullAreaPixels\": " + data.convexHullArea + ",\n");
-        writer.write("    \"convexHullArea\": " + (data.convexHullArea * areaScale) + ",\n");
+        writer.write("    \"convexHullArea\": " + (stats != null ? stats.allantoisMMArea : data.convexHullArea * areaScale) + ",\n");
+        writer.write("    \"explantArea\": " + (stats != null ? stats.allantoisMMArea : data.convexHullArea * areaScale) + ",\n");
+        writer.write("    \"vesselsArea\": " + (stats != null ? stats.vesselMMArea : (double)data.vesselPixelArea * areaScale) + ",\n");
+        writer.write("    \"vesselsPercentageArea\": " + (stats != null ? stats.vesselPercentageArea : ((double)data.vesselPixelArea * 100.0 / data.convexHullArea)) + ",\n");
         writer.write("    \"treeCount\": " + treeCount + ",\n");
         writer.write("    \"segmentCount\": " + skel.edgesLengths.size + ",\n");
         writer.write("    \"junctionCount\": " + skel.isolatedJunctions.size + ",\n");
+        writer.write("    \"junctionDensity\": " + (stats != null ? stats.junctionsPerScaledArea : ((double)skel.isolatedJunctions.size / (data.convexHullArea * areaScale))) + ",\n");
         writer.write("    \"endPointCount\": " + (skel.endPoints.size / 3) + ",\n");
         writer.write("    \"totalLengthPixels\": " + totalLengthPixels + ",\n");
-        writer.write("    \"totalLength\": " + totalLength + ",\n");
+        writer.write("    \"totalLength\": " + (stats != null ? stats.totalLength : totalLength) + ",\n");
+        writer.write("    \"totalVesselsLength\": " + (stats != null ? stats.totalLength : totalLength) + ",\n");
+        writer.write("    \"averageVesselsLength\": " + (stats != null ? stats.averageBranchLength : (treeCount > 0 ? totalLength / (double)treeCount : 0.0)) + ",\n");
         writer.write("    \"averageSegmentLength\": " + (skel.edgesLengths.size > 0 ? totalLength / (double)skel.edgesLengths.size : 0.0) + ",\n");
-        writer.write("    \"averageVesselDiameter\": " + data.averageVesselDiameter + ",\n");
+        writer.write("    \"averageVesselDiameter\": " + (stats != null ? stats.averageVesselDiameter : data.averageVesselDiameter) + ",\n");
+        writer.write("    \"medialELacunarity\": " + (stats != null ? stats.ELacunarityMedial : data.lacunarity.elMedial) + ",\n");
+        writer.write("    \"meanELacunarity\": " + (stats != null ? stats.meanEl : data.lacunarity.elMean) + ",\n");
+        writer.write("    \"eLacunarityGradient\": " + (stats != null ? stats.ELacunarityCurve : data.lacunarity.elCurve) + ",\n");
+        writer.write("    \"medialFLacunarity\": " + (stats != null ? stats.FLacunarityMedial : data.lacunarity.flMedial) + ",\n");
+        writer.write("    \"meanFLacunarity\": " + (stats != null ? stats.meanFl : data.lacunarity.flMean) + ",\n");
+        writer.write("    \"fLacunarityGradient\": " + (stats != null ? stats.FLacunarityCurve : data.lacunarity.flCurve) + ",\n");
         writer.write("    \"averageSegmentDiameter\": " + computeAverageDiameter(skel, scale) + "\n");
+        writer.write("  }");
+    }
+
+    private static void writeAnalysisParameters(Writer writer, AnalyzerParameters params) throws IOException
+    {
+        writer.write("  \"analysisParameters\": {\n");
+        writer.write("    \"lowThreshold\": " + params.thresholdLow + ",\n");
+        writer.write("    \"highThreshold\": " + params.thresholdHigh + ",\n");
+        writer.write("    \"vesselThickness\": ");
+        writeDoubleArray(writer, params.sigmas);
+        writer.write(",\n");
+        writer.write("    \"smallParticles\": " + params.removeSmallParticlesThreshold + ",\n");
+        writer.write("    \"fillHoles\": " + params.fillHolesValue + ",\n");
+        writer.write("    \"maxHoleLevel\": " + params.brightShapeThresholdFactor + ",\n");
+        writer.write("    \"minBoxness\": " + params.minBoxness + ",\n");
+        writer.write("    \"minAreaLengthRatio\": " + params.minAreaLengthRatio + ",\n");
+        writer.write("    \"skeletonizer\": \"" + (params.shouldUseFastSkeletonizer ? "Fast" : "Thorough") + "\",\n");
+        writer.write("    \"maxSkeletonSteps\": " + params.maxSkelIterations + ",\n");
+        writer.write("    \"scalingFactor\": " + params.linearScalingFactor + ",\n");
+        writer.write("    \"transformedColors\": " + params.shouldRemapColors + ",\n");
+        writer.write("    \"hueTransformWeight\": " + params.hueTransformWeight + ",\n");
+        writer.write("    \"brightnessWeight\": " + params.brightnessTransformWeight + ",\n");
+        writer.write("    \"targetColor\": \"" + params.targetRemapColor.toString() + "\",\n");
+        writer.write("    \"offColor\": \"" + params.voidRemapColor.toString() + "\",\n");
+        writer.write("    \"saturationFactor\": " + params.saturationFactor + ",\n");
+        writer.write("    \"brightnessGraph\": ");
+        writeIntArray(writer, params.brightnessLineSegments);
+        writer.write("\n");
         writer.write("  }");
     }
 
@@ -256,6 +319,64 @@ public class OverlayDataExporter
         if (pointSize > 2)
             writer.write(", \"z\": " + points[off + 2]);
         writer.write("}");
+    }
+
+    private static void writeDoubleArray(Writer writer, double[] values) throws IOException
+    {
+        writer.write("[");
+        if (values != null) {
+            for (int i = 0; i < values.length; i++) {
+                if (i > 0)
+                    writer.write(", ");
+                writer.write(Double.toString(values[i]));
+            }
+        }
+        writer.write("]");
+    }
+
+    private static void writeIntArray(Writer writer, int[] values) throws IOException
+    {
+        writer.write("[");
+        if (values != null) {
+            for (int i = 0; i < values.length; i++) {
+                if (i > 0)
+                    writer.write(", ");
+                writer.write(Integer.toString(values[i]));
+            }
+        }
+        writer.write("]");
+    }
+
+    private static void writeJsonString(Writer writer, String value) throws IOException
+    {
+        writer.write("\"");
+        if (value != null) {
+            for (int i = 0; i < value.length(); i++) {
+                char ch = value.charAt(i);
+                switch (ch) {
+                    case '\\': writer.write("\\\\"); break;
+                    case '"': writer.write("\\\""); break;
+                    case '\b': writer.write("\\b"); break;
+                    case '\f': writer.write("\\f"); break;
+                    case '\n': writer.write("\\n"); break;
+                    case '\r': writer.write("\\r"); break;
+                    case '\t': writer.write("\\t"); break;
+                    default:
+                        if (ch < 0x20) {
+                            writer.write("\\u");
+                            String hex = Integer.toHexString(ch);
+                            for (int j = hex.length(); j < 4; j++)
+                                writer.write("0");
+                            writer.write(hex);
+                        }
+                        else {
+                            writer.write(ch);
+                        }
+                        break;
+                }
+            }
+        }
+        writer.write("\"");
     }
 
     private static int readIntOrZero(IntVector values, int index)

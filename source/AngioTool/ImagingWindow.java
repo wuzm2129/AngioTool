@@ -840,6 +840,7 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
                     filePath.substring(0, extIdx),
                     imageUi.currentParams,
                     analyzerData,
+                    imageUi.currentStats,
                     imageUi.imgWidth,
                     imageUi.imgHeight,
                     imageUi.source.brightestChannel

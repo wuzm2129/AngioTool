@@ -126,7 +126,7 @@ public class BatchProcessing
                         result = Analyzer.analyze(data, input.file, inputImage, params, sliceRunner);
                         analyzeSucceeded = true;
                         if (batchParams.shouldSaveResultImages)
-                            saveResultImage(params, batchParams, data, inputImage, input.baseOutputPath, imageFormat);
+                            saveResultImage(params, batchParams, data, result, inputImage, input.baseOutputPath, imageFormat);
                     }
                     catch (Throwable ex) {
                         cancellationToken.set(true);
@@ -342,6 +342,7 @@ public class BatchProcessing
         AnalyzerParameters params,
         BatchParameters batchParams,
         Analyzer.Data data,
+        Analyzer.Stats stats,
         ArgbBuffer inputImage,
         String basePath,
         String format
@@ -365,6 +366,7 @@ public class BatchProcessing
             basePath,
             params,
             data,
+            stats,
             inputImage.width,
             inputImage.height,
             inputImage.brightestChannel
