@@ -79,6 +79,7 @@ a.png overlay-data.json
 ```json
 {
   "image": {},
+  "analysisParameters": {},
   "overlayParameters": {},
   "metrics": {},
   "convexHull": [],
@@ -98,6 +99,10 @@ a.png overlay-data.json
 
 ```json
 "image": {
+  "name": "sample.png",
+  "absolutePath": "D:\\images\\sample.png",
+  "exportDate": "5/11/26",
+  "exportTime": "7:30 PM",
   "width": 1024,
   "height": 768,
   "brightestChannel": "green"
@@ -108,6 +113,10 @@ a.png overlay-data.json
 
 | 字段 | 类型 | 含义 |
 | --- | --- | --- |
+| `name` | string | 原始图像文件名，对应 XLSX 的 `Image Name`。 |
+| `absolutePath` | string | 原始图像绝对路径，对应 XLSX 的 `Image Location`。 |
+| `exportDate` | string | 导出 JSON 的日期，对应 XLSX 的 `Date`。 |
+| `exportTime` | string | 导出 JSON 的时间，对应 XLSX 的 `Time`。 |
 | `width` | number | 图像宽度，单位为像素。 |
 | `height` | number | 图像高度，单位为像素。 |
 | `brightestChannel` | string | 程序判断出的最亮颜色通道。 |
@@ -121,7 +130,59 @@ a.png overlay-data.json
 
 外部工具读取时，可以用 `width` 和 `height` 校验点坐标是否落在图像范围内，也可以用它们创建与 mask 对齐的画布。
 
-## 5. `overlayParameters`
+## 5. `analysisParameters`
+
+`analysisParameters` 保存与单图 XLSX 导出中相同的分析参数。它们描述本次血管识别和统计计算所使用的阈值、尺度、颜色变换和骨架化设置。
+
+示例：
+
+```json
+"analysisParameters": {
+  "lowThreshold": 15,
+  "highThreshold": 255,
+  "vesselThickness": [12.0],
+  "smallParticles": 100.0,
+  "fillHoles": 100.0,
+  "maxHoleLevel": 1.5,
+  "minBoxness": 0.09375,
+  "minAreaLengthRatio": 16.0,
+  "skeletonizer": "Fast",
+  "maxSkeletonSteps": 25,
+  "scalingFactor": 1.0,
+  "transformedColors": false,
+  "hueTransformWeight": 1.0,
+  "brightnessWeight": 1.0,
+  "targetColor": "FF0000",
+  "offColor": "FF9900",
+  "saturationFactor": 1.0,
+  "brightnessGraph": [0, 0, 100, 100]
+}
+```
+
+字段与 XLSX 单图列的对应关系：
+
+| JSON 字段 | 对应 XLSX 列 | 含义 |
+| --- | --- | --- |
+| `lowThreshold` | `Low Threshold` | 低阈值参数。 |
+| `highThreshold` | `High Threshold` | 高阈值参数。 |
+| `vesselThickness` | `Vessel Thickness` | 血管增强/厚度相关 sigma 参数数组。 |
+| `smallParticles` | `Small Particles` | 小颗粒移除阈值。 |
+| `fillHoles` | `Fill Holes` | 填孔阈值。 |
+| `maxHoleLevel` | `Max Hole Level` | 最大孔洞亮度/层级阈值。 |
+| `minBoxness` | `Min Boxness` | 最小 boxness 参数。 |
+| `minAreaLengthRatio` | `Min Area Length Ratio` | 最小面积/长度比参数。 |
+| `skeletonizer` | `Skeletonizer` | 骨架化算法，当前为 `Fast` 或 `Thorough`。 |
+| `maxSkeletonSteps` | `Max Skeleton Steps` | 最大骨架化迭代步数。 |
+| `scalingFactor` | `Scaling Factor` | 线性尺度换算因子。 |
+| `transformedColors` | `Transformed Colors` | 是否启用颜色变换。 |
+| `hueTransformWeight` | `Hue Transform Weight` | 色相变换权重。 |
+| `brightnessWeight` | `Brightness Weight` | 亮度权重。 |
+| `targetColor` | `Target Color` | 目标颜色。 |
+| `offColor` | `Off Color` | 背景/排除颜色。 |
+| `saturationFactor` | `Saturation Factor` | 饱和度因子。 |
+| `brightnessGraph` | `Brightness Graph` | 亮度映射曲线点。 |
+
+## 6. `overlayParameters`
 
 `overlayParameters` 保存导出时的叠加显示参数。它们主要用于复现 AngioTool 的叠加绘图效果，而不是血管分析结果本身。
 
@@ -167,7 +228,7 @@ a.png overlay-data.json
 
 颜色字符串不带 `#` 前缀。例如 `"FF0000"` 表示红色。外部工具如果需要 CSS 或 HTML 颜色格式，可以自行转换为 `#FF0000`。
 
-## 6. `metrics`
+## 7. `metrics`
 
 `metrics` 保存整张图层面的统计值，便于外部工具不再从点集重复推算常用指标。
 
@@ -179,14 +240,26 @@ a.png overlay-data.json
   "vesselArea": 12345.0,
   "convexHullAreaPixels": 23456.0,
   "convexHullArea": 23456.0,
+  "explantArea": 23456.0,
+  "vesselsArea": 12345.0,
+  "vesselsPercentageArea": 52.63,
   "treeCount": 3,
   "segmentCount": 42,
   "junctionCount": 12,
+  "junctionDensity": 0.00051,
   "endPointCount": 18,
   "totalLengthPixels": 987.6,
   "totalLength": 987.6,
+  "totalVesselsLength": 987.6,
+  "averageVesselsLength": 329.2,
   "averageSegmentLength": 23.5,
   "averageVesselDiameter": 8.2,
+  "medialELacunarity": 1.2,
+  "meanELacunarity": 1.1,
+  "eLacunarityGradient": 0.03,
+  "medialFLacunarity": 1.3,
+  "meanFLacunarity": 1.2,
+  "fLacunarityGradient": 0.04,
   "averageSegmentDiameter": 8.0
 }
 ```
@@ -199,19 +272,31 @@ a.png overlay-data.json
 | `vesselArea` | number | 应用线性缩放后的血管面积。未启用缩放时与像素面积等价。 |
 | `convexHullAreaPixels` | number | 凸包面积，单位为像素面积。 |
 | `convexHullArea` | number | 应用线性缩放后的凸包面积。 |
+| `explantArea` | number | 外植体/凸包面积，对应 XLSX 的 `Explant Area`。 |
+| `vesselsArea` | number | 血管面积，对应 XLSX 的 `Vessels Area`。 |
+| `vesselsPercentageArea` | number | 血管面积百分比，对应 XLSX 的 `Vessels Percentage Area`。 |
 | `treeCount` | number | 骨架连通树数量。 |
 | `segmentCount` | number | 血管分支段数量，对应 `vesselSegments` 的元素数量。 |
 | `junctionCount` | number | 分支点数量。 |
+| `junctionDensity` | number | 分支点密度，对应 XLSX 的 `Junctions Density`。 |
 | `endPointCount` | number | 端点数量。 |
 | `totalLengthPixels` | number | 总血管长度，单位为像素。 |
 | `totalLength` | number | 应用线性缩放后的总血管长度。 |
+| `totalVesselsLength` | number | 总血管长度，对应 XLSX 的 `Total Vessels Length`。 |
+| `averageVesselsLength` | number | 平均血管长度，对应 XLSX 的 `Average Vessels Length`。 |
 | `averageSegmentLength` | number | 平均分支段长度。 |
 | `averageVesselDiameter` | number | 程序原有的整图平均血管直径统计值。 |
+| `medialELacunarity` | number | 对应 XLSX 的 `Medial E Lacunarity`。 |
+| `meanELacunarity` | number | 对应 XLSX 的 `Mean E Lacunarity`。 |
+| `eLacunarityGradient` | number | 对应 XLSX 的 `E Lacunarity Gradient`。 |
+| `medialFLacunarity` | number | 对应 XLSX 的 `Medial F Lacunarity`。 |
+| `meanFLacunarity` | number | 对应 XLSX 的 `Mean F Lacunarity`。 |
+| `fLacunarityGradient` | number | 对应 XLSX 的 `F Lacunarity Gradient`。 |
 | `averageSegmentDiameter` | number | 按 `vesselSegments` 中每段直径求平均后的直径。 |
 
 如果未在界面中启用线性缩放，`vesselArea`、`convexHullArea`、`totalLength`、`averageSegmentLength` 和 `averageVesselDiameter` 使用像素单位。
 
-## 7. 点集字段的通用约定
+## 8. 点集字段的通用约定
 
 JSON 中的点集字段使用整数坐标。
 
@@ -237,7 +322,7 @@ JSON 中的点集字段使用整数坐标。
 
 在大多数二维分析中，可以用 `x` 和 `y` 把这些点直接画到 mask 或原始图像上。如果只处理二维图像，通常可以忽略 `z`，但建议在自己的分析脚本中显式说明这一点。
 
-## 8. `convexHull`
+## 9. `convexHull`
 
 `convexHull` 是凸包点数组，用于表示包围血管区域的凸包轮廓。
 
