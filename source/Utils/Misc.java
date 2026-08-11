@@ -313,7 +313,68 @@ public class Misc
     // TODO: also something more sophisticated
     public static boolean isValidPath(String path)
     {
+        path = stripWrappingQuotes(path);
         return path != null && path.length() > 0;
+    }
+
+    private static boolean isPathQuote(char c)
+    {
+        return c == '"' || c == '\u201c' || c == '\u201d' || c == '\uff02';
+    }
+
+    public static String stripWrappingQuotes(String path)
+    {
+        if (path == null)
+            return null;
+
+        path = path.trim();
+        while (path.length() >= 2 && isPathQuote(path.charAt(0)) && isPathQuote(path.charAt(path.length() - 1)))
+            path = path.substring(1, path.length() - 1).trim();
+
+        return path;
+    }
+
+    static File normalizeChooserFile(File file, File currentDirectory)
+    {
+        if (file == null)
+            return null;
+
+        String originalPath = file.getPath();
+        String normalizedPath = stripWrappingQuotes(originalPath);
+        if (!normalizedPath.equals(originalPath)) {
+            File normalizedFile = new File(normalizedPath);
+            return normalizedFile.isAbsolute() || currentDirectory == null ?
+                normalizedFile :
+                new File(currentDirectory, normalizedPath);
+        }
+
+        // JFileChooser may prepend its current directory before a quoted path.
+        // Recover the text inside the quotes when it is an absolute path, or when
+        // the prefix is exactly the chooser's current directory.
+        int len = originalPath.length();
+        if (len < 2 || !isPathQuote(originalPath.charAt(len - 1)))
+            return file;
+
+        for (int i = 0; i < len - 1; i++) {
+            if (!isPathQuote(originalPath.charAt(i)))
+                continue;
+
+            String candidatePath = stripWrappingQuotes(originalPath.substring(i));
+            if (candidatePath.length() == 0)
+                continue;
+
+            File candidateFile = new File(candidatePath);
+            if (candidateFile.isAbsolute())
+                return candidateFile;
+
+            if (currentDirectory != null) {
+                File prefix = new File(originalPath.substring(0, i));
+                if (prefix.getAbsoluteFile().equals(currentDirectory.getAbsoluteFile()))
+                    return new File(currentDirectory, candidatePath);
+            }
+        }
+
+        return file;
     }
 
     public static int getFileNameOffset(String path)
@@ -347,12 +408,12 @@ public class Misc
         for (int i = 0; i < len; i++) {
             char c = blob.charAt(i);
             if (c == charSplit && prev != charEscape) {
-                paths.add(blob.substring(start, i));
+                paths.add(stripWrappingQuotes(blob.substring(start, i)));
                 start = i+1;
             }
         }
         if (start != len)
-            paths.add(blob.substring(start, len));
+            paths.add(stripWrappingQuotes(blob.substring(start, len)));
 
         return paths.toArray(new String[0]);
     }
@@ -471,9 +532,31 @@ public class Misc
         ui.setFont(new Font(font.getName(), newStyle, font.getSize()));
     }
 
+    static class QuoteTolerantFileChooser extends JFileChooser
+    {
+        @Override
+        public void approveSelection()
+        {
+            File[] selectedFiles = super.getSelectedFiles();
+            if (selectedFiles != null && selectedFiles.length > 0) {
+                File currentDirectory = getCurrentDirectory();
+                for (int i = 0; i < selectedFiles.length; i++)
+                    selectedFiles[i] = normalizeChooserFile(selectedFiles[i], currentDirectory);
+                super.setSelectedFiles(selectedFiles);
+            }
+            else {
+                File selectedFile = normalizeChooserFile(super.getSelectedFile(), getCurrentDirectory());
+                if (selectedFile != null)
+                    super.setSelectedFile(selectedFile);
+            }
+
+            super.approveSelection();
+        }
+    }
+
     public static JFileChooser createFileChooser()
     {
-        JFileChooser fc = new JFileChooser();
+        JFileChooser fc = new QuoteTolerantFileChooser();
         fc.setPreferredSize(new Dimension(800, 500));
         return fc;
     }
@@ -572,6 +655,8 @@ public class Misc
         String defaultPath,
         JFrame parentFrame
     ) {
+        existingXlsxFile = stripWrappingQuotes(existingXlsxFile);
+
         File xlsxFile;
         if (existingXlsxFile == null || existingXlsxFile.length() == 0) {
             JFileChooser fc = createFileChooser();

@@ -28,7 +28,7 @@ public class ImageFile
         double resizeFactor
     ) throws IOException
     {
-        File file = new File(absPath);
+        File file = new File(Misc.stripWrappingQuotes(absPath));
         ArgbBuffer image = acquireImage(null, file);
         if (image == null)
             return null;

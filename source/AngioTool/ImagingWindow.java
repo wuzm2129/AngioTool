@@ -801,7 +801,7 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
 
     void saveResultImage()
     {
-        String filePath = textSaveImage.getText();
+        String filePath = Misc.stripWrappingQuotes(textSaveImage.getText());
         int extIdx = -1;
         while (true) {
             if (filePath == null || filePath.length() == 0) {

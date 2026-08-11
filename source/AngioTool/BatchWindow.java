@@ -380,10 +380,10 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
         return new BatchParameters(
             defaultPath,
             Misc.splitPaths(textInputFolders.getText(), ';', File.separatorChar),
-            textExcel.getText(),
+            Misc.stripWrappingQuotes(textExcel.getText()),
             shouldSaveImages,
             shouldUseSpecificOutputFolder,
-            textSaveResultsFolder.getText(),
+            Misc.stripWrappingQuotes(textSaveResultsFolder.getText()),
             textResultsImageFormat.getText(),
             shouldOverrideWorkerCount,
             workerCount

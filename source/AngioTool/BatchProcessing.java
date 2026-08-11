@@ -202,7 +202,7 @@ public class BatchProcessing
         ArrayList<File> inputs = new ArrayList<>();
         BidirectionalMap<String, String> outputPathMap = new BidirectionalMap<>();
         for (String path : batchParams.inputImagePaths) {
-            enumerateImageFilesRecursively(inputs, new File(path), outputPathMap, uiToken);
+            enumerateImageFilesRecursively(inputs, new File(Misc.stripWrappingQuotes(path)), outputPathMap, uiToken);
             if (uiToken.isClosed())
                 return;
         }
@@ -212,7 +212,7 @@ public class BatchProcessing
             return;
         }
 
-        File excelPath = new File(batchParams.excelFilePath);
+        File excelPath = new File(Misc.stripWrappingQuotes(batchParams.excelFilePath));
         SpreadsheetWriter writer;
         try {
             writer = createBatchWriterWithNewSheet(originalSheets, excelPath.getParentFile(), excelPath.getName(), params);
@@ -378,6 +378,7 @@ public class BatchProcessing
         BidirectionalMap<String, String> outputPathMap,
         File inFile
     ) {
+        resultImagesPath = Misc.stripWrappingQuotes(resultImagesPath);
         String outFolder = outputPathMap.getBack(inFile.getParent());
         File outFolderPath = new File(resultImagesPath, outFolder);
         boolean shouldCreateFolder = false;
