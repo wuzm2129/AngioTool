@@ -805,20 +805,37 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         int extIdx = -1;
         while (true) {
             if (filePath == null || filePath.length() == 0) {
-                JFileChooser fc = Misc.createFileChooser();
-                fc.setDialogTitle("Save Result Image");
-                fc.setDialogType(JFileChooser.SAVE_DIALOG);
-                fc.setCurrentDirectory(new File(defaultPath));
-                Misc.addImageFileFilters(fc);
+                File defaultResultFile = getDefaultResultImageFile(inputFile);
+                if (defaultResultFile != null) {
+                    File resultsFolder = defaultResultFile.getParentFile();
+                    try {
+                        if (resultsFolder.exists() && !resultsFolder.isDirectory())
+                            throw new IOException("Result path is not a folder: " + resultsFolder.getAbsolutePath());
+                        if (!resultsFolder.exists() && !resultsFolder.mkdirs())
+                            throw new IOException("Could not create result folder: " + resultsFolder.getAbsolutePath());
+                    }
+                    catch (Throwable ex) {
+                        Misc.showExceptionInDialogBox(ex);
+                        return;
+                    }
+                    filePath = defaultResultFile.getAbsolutePath();
+                }
+                else {
+                    JFileChooser fc = Misc.createFileChooser();
+                    fc.setDialogTitle("Save Result Image");
+                    fc.setDialogType(JFileChooser.SAVE_DIALOG);
+                    fc.setCurrentDirectory(new File(defaultPath));
+                    Misc.addImageFileFilters(fc);
 
-                if (fc.showSaveDialog(this) != 0)
-                    return;
+                    if (fc.showSaveDialog(this) != 0)
+                        return;
 
-                filePath = fc.getSelectedFile().getAbsolutePath();
+                    filePath = fc.getSelectedFile().getAbsolutePath();
 
-                FileFilter filter = fc.getFileFilter();
-                if (filter instanceof SimpleFileFilter)
-                    filePath = ((SimpleFileFilter)filter).tailorFileName(filePath);
+                    FileFilter filter = fc.getFileFilter();
+                    if (filter instanceof SimpleFileFilter)
+                        filePath = ((SimpleFileFilter)filter).tailorFileName(filePath);
+                }
             }
 
             extIdx = filePath.lastIndexOf('.');
@@ -852,6 +869,23 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         catch (Throwable ex) {
             Misc.showExceptionInDialogBox(ex);
         }
+    }
+
+    static File getDefaultResultImageFile(File sourceFile)
+    {
+        if (sourceFile == null)
+            return null;
+
+        File sourceFolder = sourceFile.getParentFile();
+        if (sourceFolder == null)
+            return null;
+
+        String outputName = sourceFile.getName();
+        int extensionOffset = outputName.lastIndexOf('.');
+        if (extensionOffset <= 0 || extensionOffset == outputName.length() - 1)
+            outputName += ".png";
+
+        return new File(new File(sourceFolder, "results"), "ana_" + outputName);
     }
 
     void saveResultSpreadsheet()

@@ -693,7 +693,26 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         fc.setDialogType(JFileChooser.OPEN_DIALOG);
         fc.setCurrentDirectory(new File(defaultPath));
         Misc.addImageFileFilters(fc);
-        return fc.showOpenDialog(this) == 0 ? fc.getSelectedFile() : null;
+
+        if (fc.showOpenDialog(this) != 0)
+            return null;
+
+        File selectedFile = fc.getSelectedFile();
+        rememberViewDirectory(selectedFile);
+        return selectedFile;
+    }
+
+    void rememberViewDirectory(File imageFile)
+    {
+        if (imageFile == null)
+            return;
+
+        File directory = imageFile.getParentFile();
+        if (directory == null)
+            return;
+
+        defaultPath = directory.getAbsolutePath();
+        ATPreferences.savePreferences(new ViewPreferences(defaultPath), AngioTool.VIEW_PREFS_TXT);
     }
 
     void toggleTransformColors()

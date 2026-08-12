@@ -21,6 +21,7 @@ public class AngioTool
     public static final String VERSION = "AngioTool 2.0 r9 (18.07.24)";
     public static final String PREFS_TXT = "AT_Prefs.txt";
     public static final String BATCH_TXT = "AT_BatchPrefs.txt";
+    public static final String VIEW_PREFS_TXT = "AT_ViewPrefs.txt";
 
     public static ImageIcon ATIcon;
     public static ImageIcon ATImage;
@@ -110,10 +111,14 @@ public class AngioTool
         try { errors.extend(ATPreferences.loadPreferences(batchParams, at, BATCH_TXT)); }
         catch (Exception ignored) {}
 
+        ViewPreferences viewPrefs = new ViewPreferences(batchParams.defaultPath);
+        try { errors.extend(ATPreferences.loadPreferences(viewPrefs, at, VIEW_PREFS_TXT)); }
+        catch (Exception ignored) {}
+
         if (errors.size > 0)
             Misc.showDialogBox("Configuration parsing error", String.join("\n", errors));
 
-        AngioToolGui2 angioToolGui = new AngioToolGui2(source, analyzerParams, batchParams.defaultPath);
+        AngioToolGui2 angioToolGui = new AngioToolGui2(source, analyzerParams, viewPrefs.defaultPath);
 
         return angioToolGui;
     }
