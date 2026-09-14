@@ -19,6 +19,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import com.formdev.flatlaf.icons.FlatFileViewDirectoryIcon;
+import com.formdev.flatlaf.icons.FlatFileChooserDetailsViewIcon;
 
 public class BatchWindow extends JFrame implements BatchProcessing.IProgressToken
 {
@@ -34,6 +36,7 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
     final JLabel labelExcel = new JLabel();
     final JButton btnExcel = new JButton();
     final JTextField textExcel = new JTextField();
+    final JCheckBox cbAutomaticExcelPath = new JCheckBox();
     final ButtonGroup groupSaveResults = new ButtonGroup();
     final JRadioButton rbNoOutput = new JRadioButton();
     final JRadioButton rbSameOutput = new JRadioButton();
@@ -41,9 +44,11 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
     final JButton btnSaveResultsFolder = new JButton();
     final JTextField textSaveResultsFolder = new JTextField();
     final JLabel labelResultsImageFormat = new JLabel();
-    final JTextField textResultsImageFormat = new JTextField();
+    final JComboBox<String> imageFormat = new JComboBox<>(
+        new String[] {"png", "tif", "tiff", "jpg", "jpeg", "gif", "bmp", "ppm"});
     final JCheckBox cbWorkerCount = new JCheckBox();
-    final JTextField textWorkerCount = new JTextField();
+    final JSpinner workerSpinner = new JSpinner(new SpinnerNumberModel(1, 1, Integer.MAX_VALUE, 1));
+    final JTextField textWorkerCount = ((JSpinner.DefaultEditor)workerSpinner.getEditor()).getTextField();
     final JLabel labelWorkerCountHelp = new JLabel();
 
     final JSeparator sepProgress = new JSeparator();
@@ -70,6 +75,22 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
         this.mainWindow = mainWindow;
         this.defaultPath = params.defaultPath;
 
+        textInputFolders.setText(joinInputPaths(params.inputImagePaths));
+        cbAutomaticExcelPath.setText("Create spreadsheet in first input folder");
+        cbAutomaticExcelPath.setSelected(params.shouldUseAutomaticExcelPath);
+        cbAutomaticExcelPath.setToolTipText("Uses the first selected input folder; edit the generated workbook name below if needed.");
+        cbAutomaticExcelPath.addActionListener(e -> toggleAutomaticExcelPath(true));
+        if (params.shouldUseAutomaticExcelPath) {
+            File firstInput = firstInputFolder();
+            textExcel.setText(Misc.isValidPath(params.excelFilePath) ?
+                new File(Misc.stripWrappingQuotes(params.excelFilePath)).getName() :
+                BatchParameters.defaultExcelFileName(firstInput));
+        }
+        else {
+            textExcel.setText(params.excelFilePath != null ? params.excelFilePath : "");
+        }
+        textSaveResultsFolder.setText(params.resultImagesPath != null ? params.resultImagesPath : "");
+
         this.setIconImage(AngioTool.ATIcon.getImage());
 
         labelData.setText("Data");
@@ -77,21 +98,23 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
 
         labelInputFolders.setText("Select input folders:");
 
-        btnInputFolders.setIcon(AngioTool.ATFolderSmall);
+        btnInputFolders.setIcon(new FlatFileViewDirectoryIcon());
+        UiTheme.tool(btnInputFolders, "Choose input folders");
         btnInputFolders.addActionListener((ActionEvent e) -> BatchWindow.this.selectInputFolders());
         //textInputFolders
 
         labelExcel.setText("Excel spreadsheet:");
 
-        btnExcel.setIcon(AngioTool.ATExcelSmall);
+        btnExcel.setIcon(new FlatFileChooserDetailsViewIcon());
+        UiTheme.tool(btnExcel, "Choose spreadsheet");
         btnExcel.addActionListener((ActionEvent e) -> BatchWindow.this.selectExcelFile());
         //textExcel
 
-        rbNoOutput.setText("No output");
+        rbNoOutput.setText("Spreadsheet only");
         rbNoOutput.addActionListener((ActionEvent e) -> BatchWindow.this.toggleSaveResults());
         rbNoOutput.setSelected(!params.shouldSaveResultImages);
 
-        rbSameOutput.setText("Same folders as inputs");
+        rbSameOutput.setText("Create results folders next to inputs");
         rbSameOutput.addActionListener((ActionEvent e) -> BatchWindow.this.toggleSaveResults());
         rbSameOutput.setSelected(params.shouldSaveResultImages && !params.shouldSaveImagesToSpecificFolder);
 
@@ -103,21 +126,24 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
         groupSaveResults.add(rbSameOutput);
         groupSaveResults.add(rbSaveResultsTo);
 
-        btnSaveResultsFolder.setIcon(AngioTool.ATFolderSmall);
+        btnSaveResultsFolder.setIcon(new FlatFileViewDirectoryIcon());
+        UiTheme.tool(btnSaveResultsFolder, "Choose output folder");
         btnSaveResultsFolder.addActionListener((ActionEvent e) -> BatchWindow.this.selectResultFolder());
         //textSaveResultsFolder
 
         toggleSaveResults();
+        toggleAutomaticExcelPath(false);
 
         labelResultsImageFormat.setText("Result image format: ");
-        textResultsImageFormat.setText(params.resultImageFormat);
+        imageFormat.setEditable(true);
+        imageFormat.setSelectedItem(params.resultImageFormat);
 
         cbWorkerCount.setText("Override job count: ");
         cbWorkerCount.setSelected(params.shouldOverrideWorkerCount);
         cbWorkerCount.addActionListener((ActionEvent e) -> BatchWindow.this.toggleWorkerCount());
 
         int nProcessors = Runtime.getRuntime().availableProcessors();
-        int defaultWorkerCount = (int)(nProcessors * BALANCED_FACTOR);
+        int defaultWorkerCount = getDefaultWorkerCount();
         this.workerCountHelpString =
             "<html>Recommended job count:<br>" + nProcessors + " for maximum throughput,<br>" +
              defaultWorkerCount + " (default) for balancing resources</html>";
@@ -125,11 +151,11 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
         Misc.setNewFontStyleOn(labelWorkerCountHelp, Font.PLAIN);
 
         if (params.shouldOverrideWorkerCount) {
-            textWorkerCount.setText("" + params.workerCount);
+            workerSpinner.setValue(Math.max(1, params.workerCount));
             labelWorkerCountHelp.setText(workerCountHelpString);
         }
         else {
-            textWorkerCount.setText("");
+            workerSpinner.setValue(defaultWorkerCount);
         }
 
         storedWorkerCount = params.workerCount > 0 ? params.workerCount : defaultWorkerCount;
@@ -145,7 +171,8 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
 
         Misc.setNewFontStyleOn(labelCurrentFile, Font.ITALIC);
 
-        analyzeBtn.setText("Run");
+        analyzeBtn.setText("Run analysis");
+        UiTheme.primary(analyzeBtn);
         analyzeBtn.addActionListener((ActionEvent e) -> BatchWindow.this.startAnalysis());
 
         cancelBtn.setText("Cancel");
@@ -155,14 +182,7 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
 
     public void showDialog()
     {
-        JPanel dialogPanel = new JPanel();
-        GroupLayout layout = new GroupLayout(dialogPanel);
-        dialogPanel.setLayout(layout);
-        dialogPanel.setBorder(new EmptyBorder(0, 2, 12, 2));
-        layout.setAutoCreateGaps(true);
-        layout.setAutoCreateContainerGaps(true);
-
-        arrangeUi(layout);
+        JPanel dialogPanel = buildContent();
 
         this.getContentPane().add(dialogPanel);
         this.pack();
@@ -170,129 +190,84 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
         this.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent evt) {
-                ATPreferences.savePreferences(buildBatchParamsFromUi(), AngioTool.BATCH_TXT);
+                try {
+                    ATPreferences.savePreferences(buildBatchParamsFromUi(), AngioTool.BATCH_TXT);
+                }
+                catch (IllegalArgumentException ignored) {}
+                cancel();
             }
         });
 
-        int extraWidth = cbWorkerCount.isSelected() ? 150 : 250;
-
-        Dimension preferredSize = this.getPreferredSize();
-        this.setMinimumSize(preferredSize);
-        this.setSize(new Dimension(preferredSize.width + extraWidth, preferredSize.height + 10));
-
-        this.setLocation(700, 300);
+        this.setMinimumSize(UiTheme.size(580, 500));
+        UiTheme.place(this, mainWindow, 680, 760);
         this.setVisible(true);
     }
 
-    private void arrangeUi(GroupLayout layout)
+    private JPanel buildContent()
     {
-        layout.setHorizontalGroup(layout.createParallelGroup()
-            .addComponent(labelData)
-            .addGroup(layout.createSequentialGroup()
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(labelInputFolders)
-                    .addComponent(labelExcel)
-                )
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(btnInputFolders)
-                    .addComponent(btnExcel)
-                )
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(textInputFolders)
-                    .addComponent(textExcel)
-                )
-            )
-            .addComponent(rbNoOutput)
-            .addComponent(rbSameOutput)
-            .addGroup(layout.createSequentialGroup()
-                .addComponent(rbSaveResultsTo)
-                .addComponent(btnSaveResultsFolder)
-                .addComponent(textSaveResultsFolder)
-            )
-            .addGroup(layout.createSequentialGroup()
-                .addGroup(layout.createParallelGroup()
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(labelResultsImageFormat)
-                        .addComponent(textResultsImageFormat, 0, 0, 80)
-                    )
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(cbWorkerCount)
-                        .addComponent(textWorkerCount, 0, 0, 80)
-                    )
-                )
-                .addComponent(labelWorkerCountHelp)
-            )
-            .addComponent(sepProgress)
-            .addComponent(labelProgress)
-            .addComponent(overallLabel)
-            .addComponent(overallProgress)
-            .addComponent(labelCurrentFile)
-            .addGroup(GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
-                .addComponent(analyzeBtn)
-                .addComponent(cancelBtn)
-            )
-        );
+        JPanel root = new JPanel(new BorderLayout());
+        JLabel title = new JLabel("Batch analysis");
+        title.setFont(title.getFont().deriveFont(Font.BOLD, UiTheme.fontSize(22f)));
+        title.setBorder(new EmptyBorder(18, 18, 2, 18));
+        root.add(title, BorderLayout.NORTH);
+        textInputFolders.putClientProperty("JTextField.placeholderText", "Input folders");
+        textExcel.putClientProperty("JTextField.placeholderText", "Results workbook (.xlsx)");
+        textSaveResultsFolder.putClientProperty("JTextField.placeholderText", "Output folder");
+        imageFormat.setPreferredSize(UiTheme.size(110, 30));
+        workerSpinner.setPreferredSize(UiTheme.size(110, 30));
+        workerSpinner.setEnabled(cbWorkerCount.isSelected());
+        labelWorkerCountHelp.setText("");
+        cbWorkerCount.setToolTipText(workerCountHelpString);
+        root.add(UiTheme.scrollColumn(
+            UiTheme.section("Inputs",
+                UiTheme.field("Image folders", pathRow(textInputFolders, btnInputFolders))),
+            UiTheme.section("Outputs",
+                cbAutomaticExcelPath,
+                UiTheme.field("Spreadsheet", pathRow(textExcel, btnExcel)),
+                rbNoOutput, rbSameOutput, rbSaveResultsTo,
+                pathRow(textSaveResultsFolder, btnSaveResultsFolder),
+                UiTheme.row(labelResultsImageFormat, imageFormat)),
+            UiTheme.section("Execution", UiTheme.row(cbWorkerCount, workerSpinner))
+        ), BorderLayout.CENTER);
+        JPanel footer = new JPanel(new BorderLayout(0, 10));
+        footer.setBorder(new EmptyBorder(14, 18, 18, 18));
+        JPanel progress = new JPanel(new BorderLayout(0, 6));
+        overallLabel.setText("Ready");
+        progress.add(overallLabel, BorderLayout.NORTH);
+        progress.add(overallProgress, BorderLayout.CENTER);
+        labelCurrentFile.setPreferredSize(new Dimension(200, 22));
+        progress.add(labelCurrentFile, BorderLayout.SOUTH);
+        footer.add(progress, BorderLayout.CENTER);
+        JPanel actions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 0));
+        actions.add(cancelBtn);
+        actions.add(analyzeBtn);
+        footer.add(actions, BorderLayout.SOUTH);
+        root.add(footer, BorderLayout.SOUTH);
+        return root;
+    }
 
-        final int MIN_TEXT_HEIGHT = 18;
-        final int TEXT_HEIGHT = 30;
-
-        layout.setVerticalGroup(layout.createSequentialGroup()
-            .addComponent(labelData)
-            .addGap(8)
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.CENTER)
-                .addComponent(labelInputFolders)
-                .addComponent(btnInputFolders)
-                .addComponent(textInputFolders, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-            )
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.CENTER)
-                .addComponent(labelExcel)
-                .addComponent(btnExcel)
-                .addComponent(textExcel, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-            )
-            .addComponent(rbNoOutput)
-            .addComponent(rbSameOutput)
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.CENTER)
-                .addComponent(rbSaveResultsTo)
-                .addComponent(btnSaveResultsFolder)
-                .addComponent(textSaveResultsFolder, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-            )
-            .addGap(12)
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.CENTER)
-                .addGroup(layout.createSequentialGroup()
-                    .addComponent(labelResultsImageFormat, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-                    .addComponent(cbWorkerCount, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-                )
-                .addGroup(layout.createSequentialGroup()
-                    .addComponent(textResultsImageFormat, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-                    .addComponent(textWorkerCount, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-                )
-                .addComponent(labelWorkerCountHelp)
-            )
-            .addGap(12)
-            .addComponent(sepProgress)
-            .addComponent(labelProgress)
-            .addComponent(overallLabel)
-            .addComponent(overallProgress)
-            .addComponent(labelCurrentFile, 48, 48, Short.MAX_VALUE)
-            .addGroup(layout.createParallelGroup()
-                .addComponent(analyzeBtn)
-                .addComponent(cancelBtn)
-            )
-        );
+    private JPanel pathRow(JTextField path, JButton button)
+    {
+        JPanel row = new JPanel(new BorderLayout(8, 0));
+        row.add(path, BorderLayout.CENTER);
+        row.add(button, BorderLayout.EAST);
+        return row;
     }
 
     void toggleSaveResults() {
         boolean enabled = rbSaveResultsTo.isSelected();
         btnSaveResultsFolder.setEnabled(enabled);
         textSaveResultsFolder.setEnabled(enabled);
+        labelResultsImageFormat.setEnabled(enabled);
+        imageFormat.setEnabled(enabled);
     }
 
     void toggleWorkerCount() {
         boolean enabled = cbWorkerCount.isSelected();
-        labelWorkerCountHelp.setText(workerCountHelpString);
+        workerSpinner.setEnabled(enabled);
         if (enabled) {
             int workerCount = storedWorkerCount > 0 ? storedWorkerCount : getDefaultWorkerCount();
-            textWorkerCount.setText("" + workerCount);
+            workerSpinner.setValue(workerCount);
         }
         else {
             try {
@@ -301,7 +276,24 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
             catch (Exception ignored) {
                 storedWorkerCount = 0;
             }
-            textWorkerCount.setText("");
+            workerSpinner.setValue(getDefaultWorkerCount());
+        }
+    }
+
+    void toggleAutomaticExcelPath(boolean updatePath)
+    {
+        boolean automatic = cbAutomaticExcelPath.isSelected();
+        btnExcel.setEnabled(!automatic);
+        if (automatic) {
+            originalSheets = new ArrayList<>();
+            if (updatePath || !Misc.isValidPath(textExcel.getText()))
+                textExcel.setText(BatchParameters.defaultExcelFileName(firstInputFolder()));
+        }
+        else if (updatePath) {
+            File inputFolder = firstInputFolder();
+            File entered = new File(Misc.stripWrappingQuotes(textExcel.getText()));
+            if (inputFolder != null && entered.getParentFile() == null)
+                textExcel.setText(new File(inputFolder, entered.getName()).getAbsolutePath());
         }
     }
 
@@ -328,12 +320,18 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
         }
 
         textInputFolders.setText(sb.toString());
+        if (cbAutomaticExcelPath.isSelected()) {
+            originalSheets = new ArrayList<>();
+            textExcel.setText(BatchParameters.defaultExcelFileName(folderList[0]));
+        }
     }
 
     void selectExcelFile() {
         String[] outStrings = new String[2];
         ArrayList<XlsxReader.SheetCells> sheets = Misc.openSpreadsheetForAppending(outStrings, null, defaultPath, this);
         if (sheets != null) {
+            cbAutomaticExcelPath.setSelected(false);
+            toggleAutomaticExcelPath(false);
             originalSheets = sheets;
             defaultPath = outStrings[1];
             textExcel.setText(outStrings[0]);
@@ -381,13 +379,36 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
             defaultPath,
             Misc.splitPaths(textInputFolders.getText(), ';', File.separatorChar),
             Misc.stripWrappingQuotes(textExcel.getText()),
+            cbAutomaticExcelPath.isSelected(),
             shouldSaveImages,
             shouldUseSpecificOutputFolder,
             Misc.stripWrappingQuotes(textSaveResultsFolder.getText()),
-            textResultsImageFormat.getText(),
+            imageFormat.getEditor().getItem().toString(),
             shouldOverrideWorkerCount,
             workerCount
         );
+    }
+
+    File firstInputFolder()
+    {
+        String[] paths = Misc.splitPaths(textInputFolders.getText(), ';', File.separatorChar);
+        return paths != null && paths.length > 0 && Misc.isValidPath(paths[0]) ?
+            new File(Misc.stripWrappingQuotes(paths[0])).getAbsoluteFile() : null;
+    }
+
+    static String joinInputPaths(String[] paths)
+    {
+        if (paths == null || paths.length == 0)
+            return "";
+        StringBuilder sb = new StringBuilder();
+        for (String path : paths) {
+            if (path == null)
+                continue;
+            if (sb.length() > 0)
+                sb.append(';');
+            sb.append(path.replace(";", "" + File.separatorChar + ";"));
+        }
+        return sb.toString();
     }
 
     public void startAnalysis()
@@ -436,13 +457,26 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
         }
 
         cancelBtn.setEnabled(true);
+        analyzeBtn.setEnabled(false);
 
         ATPreferences.savePreferences(params, AngioTool.PREFS_TXT);
         ATPreferences.savePreferences(batchParams, AngioTool.BATCH_TXT);
 
-        analysisTaskFuture = (Future<Void>)Analyzer.threadPool.submit(
-            () -> BatchProcessing.doBatchAnalysis(params, batchParams, BatchWindow.this, originalSheets)
-        );
+        analysisTaskFuture = (Future<Void>)Analyzer.threadPool.submit(() -> {
+            try {
+                BatchProcessing.doBatchAnalysis(params, batchParams, BatchWindow.this, originalSheets);
+            }
+            finally {
+                SwingUtilities.invokeLater(() -> {
+                    if (!isClosed.get()) {
+                        analyzeBtn.setEnabled(true);
+                        cancelBtn.setEnabled(false);
+                        if (overallLabel.getText().equals("Finding every image to be analyzed..."))
+                            overallLabel.setText("Stopped before analysis");
+                    }
+                });
+            }
+        });
     }
 
     void updateWindowSize() {
@@ -468,6 +502,7 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
 
             overallLabel.setText("No images were found!");
             cancelBtn.setEnabled(false);
+            analyzeBtn.setEnabled(true);
 
             updateWindowSize();
         });
@@ -530,7 +565,8 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
 
             overallLabel.setText(status);
             overallProgress.setValue(overallProgress.getValue() + 1);
-            labelCurrentFile.setText("<html><p>" + path + "</p></html>");
+            labelCurrentFile.setText(path);
+            labelCurrentFile.setToolTipText(path);
 
             updateWindowSize();
         });
@@ -559,6 +595,7 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
 
             overallLabel.setText(status);
             cancelBtn.setEnabled(false);
+            analyzeBtn.setEnabled(true);
 
             updateWindowSize();
 
@@ -580,6 +617,6 @@ public class BatchWindow extends JFrame implements BatchProcessing.IProgressToke
 
     public static int getDefaultWorkerCount()
     {
-        return (int)(Runtime.getRuntime().availableProcessors() * BALANCED_FACTOR);
+        return Math.max(1, (int)(Runtime.getRuntime().availableProcessors() * BALANCED_FACTOR));
     }
 }

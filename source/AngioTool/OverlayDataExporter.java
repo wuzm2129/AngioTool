@@ -1,6 +1,7 @@
 package AngioTool;
 
 import Algorithms.AnalyzeSkeleton2;
+import Algorithms.FractalBoxCount;
 import Pixels.ArgbBuffer;
 import Pixels.ImageFile;
 import Utils.IntBufferPool;
@@ -27,7 +28,108 @@ public class OverlayDataExporter
     ) throws IOException
     {
         saveMaskImage(basePath + " vessel-mask.png", data.analysisImage.buf, width, height);
+        if (data.rawSkeleton != null)
+            saveMaskImage(basePath + " raw-skeleton.png", data.rawSkeleton, width, height);
+        if (data.processedSkeleton != null)
+            saveMaskImage(basePath + " pruned-skeleton.png", data.processedSkeleton, width, height);
         saveOverlayJson(basePath + " overlay-data.json", params, data, stats, width, height, brightestChannel);
+        if (params.shouldNormalizeOutputData && stats != null)
+            saveNormalizedJson(basePath + " normalized-data.json", params, data, stats, width, height, brightestChannel);
+    }
+
+    public static void saveNormalizedJson(
+        String absPath,
+        AnalyzerParameters params,
+        Analyzer.Data data,
+        Analyzer.Stats stats,
+        int width,
+        int height,
+        int brightestChannel
+    ) throws IOException
+    {
+        NormalizedMetrics metrics = NormalizedMetrics.from(params, stats);
+        Writer writer = new OutputStreamWriter(new FileOutputStream(new File(absPath)), "UTF-8");
+        try {
+            writer.write("{\n");
+            writer.write("  \"programVersion\": ");
+            writeJsonString(writer, AngioTool.VERSION);
+            writer.write(",\n  \"normalization\": {\n");
+            writer.write("    \"enabled\": true,\n");
+            writer.write("    \"ruleVersion\": ");
+            writeJsonString(writer, NormalizedMetrics.RULE_VERSION);
+            writer.write(",\n    \"basisCoordinateSystem\": \"analysis-image\",\n");
+            writer.write("    \"areaRule\": ");
+            writeJsonString(writer, NormalizedMetrics.AREA_RULE);
+            writer.write(",\n    \"lengthRule\": ");
+            writeJsonString(writer, NormalizedMetrics.LENGTH_RULE);
+            writer.write(",\n    \"countRule\": ");
+            writeJsonString(writer, NormalizedMetrics.COUNT_RULE);
+            writer.write(",\n    \"configuredInputResizeFactor\": " + params.effectiveResizeFactor() + ",\n");
+            writer.write("    \"measurementScale\": " + metrics.measurementScale + ",\n");
+            writer.write("    \"analysisImageAreaPixels\": " + metrics.analysisImageAreaPixels + ",\n");
+            writer.write("    \"lengthBasisPixels\": " + metrics.lengthBasisPixels + ",\n");
+            writer.write("    \"areaBasisInMeasurementUnits\": " + metrics.areaBasisInMeasurementUnits + ",\n");
+            writer.write("    \"lengthBasisInMeasurementUnits\": " + metrics.lengthBasisInMeasurementUnits + "\n");
+            writer.write("  },\n");
+            writeImageInfo(writer, stats, width, height, brightestChannel);
+            writer.write(",\n  \"imageRelativeMetrics\": {\n");
+            writer.write("    \"valid\": " + stats.valid + ",\n");
+            writer.write("    \"invalidReason\": ");
+            writeJsonString(writer, stats.invalidReason);
+            writer.write(",\n    \"convexHullAreaFractionOfImage\": ");
+            writeNullableDouble(writer, metrics.convexHullAreaFractionOfImage);
+            writer.write(",\n    \"vesselAreaFractionOfImage\": ");
+            writeNullableDouble(writer, metrics.vesselAreaFractionOfImage);
+            writer.write(",\n    \"vesselsPercentageAreaOfHull\": ");
+            writeNullableDouble(writer, metrics.vesselsPercentageAreaOfHull);
+            writer.write(",\n    \"junctionCount\": " + metrics.junctionCount + ",\n");
+            writer.write("    \"junctionDensityTimesImageArea\": ");
+            writeNullableDouble(writer, metrics.junctionDensityTimesImageArea);
+            writer.write(",\n    \"endPointCount\": " + metrics.endPointCount + ",\n");
+            writer.write("    \"treeCount\": " + data.skelResult.treeCount + ",\n");
+            writer.write("    \"segmentCount\": " + metrics.segmentCount + ",\n");
+            writer.write("    \"totalLengthOverSqrtImageArea\": ");
+            writeNullableDouble(writer, metrics.totalLengthOverSqrtImageArea);
+            writer.write(",\n    \"averageVesselsLengthOverSqrtImageArea\": ");
+            writeNullableDouble(writer, metrics.averageVesselsLengthOverSqrtImageArea);
+            writer.write(",\n    \"averageSegmentLengthOverSqrtImageArea\": ");
+            writeNullableDouble(writer, metrics.averageSegmentLengthOverSqrtImageArea);
+            writer.write(",\n    \"averageVesselDiameterOverSqrtImageArea\": ");
+            writeNullableDouble(writer, metrics.averageVesselDiameterOverSqrtImageArea);
+            writer.write(",\n    \"averageSegmentDiameterOverSqrtImageArea\": ");
+            writeFiniteDoubleOrNull(writer, metrics.lengthBasisInMeasurementUnits > 0.0 ?
+                computeAverageDiameter(data.skelResult, metrics.measurementScale) /
+                    metrics.lengthBasisInMeasurementUnits : Double.NaN);
+            writer.write(",\n    \"skeletonPixelsOverSqrtImageArea\": ");
+            writeNullableDouble(writer, metrics.skeletonPixelsOverSqrtImageArea);
+            writer.write(",\n    \"prunedSkeletonPixelsOverSqrtImageArea\": ");
+            writeNullableDouble(writer, metrics.prunedSkeletonPixelsOverSqrtImageArea);
+            writer.write(",\n    \"rawSkeletonPixelsOverSqrtImageArea\": ");
+            writeNullableDouble(writer, metrics.rawSkeletonPixelsOverSqrtImageArea);
+            writer.write(",\n    \"isolatedSkeletonPixelCount\": " + stats.isolatedSkeletonPixelCount);
+            writer.write(",\n    \"mergedJunctionRegionCount\": " + stats.mergedJunctionRegionCount + ",\n");
+            writer.write("    \"skeletonConverged\": " + stats.skeletonConverged + ",\n");
+            writer.write("    \"pruningStatus\": ");
+            writeJsonString(writer, stats.pruningStatus);
+            writer.write(",\n    \"medialELacunarity\": ");
+            writeFiniteDoubleOrNull(writer, stats.ELacunarityMedial);
+            writer.write(",\n    \"meanELacunarity\": ");
+            writeFiniteDoubleOrNull(writer, stats.meanEl);
+            writer.write(",\n    \"eLacunarityGradient\": ");
+            writeFiniteDoubleOrNull(writer, stats.ELacunarityCurve);
+            writer.write(",\n    \"medialFLacunarity\": ");
+            writeFiniteDoubleOrNull(writer, stats.FLacunarityMedial);
+            writer.write(",\n    \"meanFLacunarity\": ");
+            writeFiniteDoubleOrNull(writer, stats.meanFl);
+            writer.write(",\n    \"fLacunarityGradient\": ");
+            writeFiniteDoubleOrNull(writer, stats.FLacunarityCurve);
+            writer.write(",\n");
+            writeFractalBoxCount(writer, data, stats, width, height);
+            writer.write("\n  }\n}\n");
+        }
+        finally {
+            writer.close();
+        }
     }
 
     private static void saveMaskImage(String absPath, byte[] analysisImage, int width, int height) throws IOException
@@ -64,6 +166,14 @@ public class OverlayDataExporter
             AnalyzeSkeleton2.Result skel = data.skelResult;
 
             writer.write("{\n");
+            writer.write("  \"programVersion\": ");
+            writeJsonString(writer, AngioTool.VERSION);
+            writer.write(",\n  \"skeletonProcessing\": {\n");
+            writer.write("    \"pruneTerminalBranches\": " + params.shouldPruneSkeleton + ",\n");
+            writer.write("    \"maxTerminalBranchLengthPx\": " + params.maxTerminalBranchLength + ",\n");
+            writer.write("    \"mergeNearbyJunctions\": " + params.shouldMergeNearbyJunctions + ",\n");
+            writer.write("    \"maxJunctionMergeDistancePx\": " + params.maxJunctionMergeDistance + ",\n");
+            writer.write("    \"policy\": \"single-pass-pruning-and-direct-skeleton-link-junction-merge\"\n  },\n");
             writeImageInfo(writer, stats, width, height, brightestChannel);
             writer.write(",\n");
             writeUiParameters(writer, params);
@@ -72,7 +182,7 @@ public class OverlayDataExporter
             writer.write(",\n");
             writeParameters(writer, params);
             writer.write(",\n");
-            writeMetrics(writer, params, data, stats);
+            writeMetrics(writer, params, data, stats, width, height);
             writer.write(",\n");
             writePointArray(writer, "convexHull", data.convexHull, 2, 2);
             writer.write(",\n");
@@ -117,7 +227,14 @@ public class OverlayDataExporter
         writer.write("  }");
     }
 
-    private static void writeMetrics(Writer writer, AnalyzerParameters params, Analyzer.Data data, Analyzer.Stats stats) throws IOException
+    private static void writeMetrics(
+        Writer writer,
+        AnalyzerParameters params,
+        Analyzer.Data data,
+        Analyzer.Stats stats,
+        int width,
+        int height
+    ) throws IOException
     {
         AnalyzeSkeleton2.Result skel = data.skelResult;
         double scale = params.shouldApplyLinearScale ? params.linearScalingFactor : 1.0;
@@ -127,23 +244,46 @@ public class OverlayDataExporter
         int treeCount = skel.treeCount;
 
         writer.write("  \"metrics\": {\n");
+        writer.write("    \"valid\": " + (stats == null || stats.valid) + ",\n");
+        writer.write("    \"invalidReason\": ");
+        writeJsonString(writer, stats != null ? stats.invalidReason : "");
+        writer.write(",\n");
+        writer.write("    \"areaDenominator\": ");
+        writeJsonString(writer, stats != null ? stats.areaDenominator : "vessel-mask-convex-hull");
+        writer.write(",\n");
+        writer.write("    \"morphology\": \"3x3-closing-twice\",\n");
         writer.write("    \"vesselPixelArea\": " + data.vesselPixelArea + ",\n");
         writer.write("    \"vesselArea\": " + (stats != null ? stats.vesselMMArea : (double)data.vesselPixelArea * areaScale) + ",\n");
         writer.write("    \"convexHullAreaPixels\": " + data.convexHullArea + ",\n");
         writer.write("    \"convexHullArea\": " + (stats != null ? stats.allantoisMMArea : data.convexHullArea * areaScale) + ",\n");
         writer.write("    \"explantArea\": " + (stats != null ? stats.allantoisMMArea : data.convexHullArea * areaScale) + ",\n");
         writer.write("    \"vesselsArea\": " + (stats != null ? stats.vesselMMArea : (double)data.vesselPixelArea * areaScale) + ",\n");
-        writer.write("    \"vesselsPercentageArea\": " + (stats != null ? stats.vesselPercentageArea : ((double)data.vesselPixelArea * 100.0 / data.convexHullArea)) + ",\n");
+        writer.write("    \"vesselsPercentageArea\": ");
+        writeFiniteDoubleOrNull(writer, stats != null ? stats.vesselPercentageArea :
+            (double)data.vesselPixelArea * 100.0 / data.convexHullArea);
+        writer.write(",\n");
         writer.write("    \"treeCount\": " + treeCount + ",\n");
         writer.write("    \"segmentCount\": " + skel.edgesLengths.size + ",\n");
+        writer.write("    \"skeletonPixelCount\": " + (stats != null ? stats.skeletonPixelCount : skel.slabList.size / 3) + ",\n");
+        writer.write("    \"isolatedSkeletonPixelCount\": " + (stats != null ? stats.isolatedSkeletonPixelCount : 0) + ",\n");
+        writer.write("    \"skeletonConverged\": " + data.skeletonConverged + ",\n");
+        writer.write("    \"prunedSkeletonPixelCount\": " + data.prunedSkeletonPixelCount + ",\n");
+        writer.write("    \"pruningStatus\": ");
+        writeJsonString(writer, data.pruningStatus);
+        writer.write(",\n");
+        writer.write("    \"junctionPolicy\": \"connected-region-plus-short-direct-skeleton-links\",\n");
+        writer.write("    \"mergedJunctionRegionCount\": " + skel.mergedJunctionRegionCount + ",\n");
         writer.write("    \"junctionCount\": " + skel.isolatedJunctions.size + ",\n");
-        writer.write("    \"junctionDensity\": " + (stats != null ? stats.junctionsPerScaledArea : ((double)skel.isolatedJunctions.size / (data.convexHullArea * areaScale))) + ",\n");
+        writer.write("    \"junctionDensity\": ");
+        writeFiniteDoubleOrNull(writer, stats != null ? stats.junctionsPerScaledArea :
+            (double)skel.isolatedJunctions.size / (data.convexHullArea * areaScale));
+        writer.write(",\n");
         writer.write("    \"endPointCount\": " + (skel.endPoints.size / 3) + ",\n");
         writer.write("    \"totalLengthPixels\": " + totalLengthPixels + ",\n");
         writer.write("    \"totalLength\": " + (stats != null ? stats.totalLength : totalLength) + ",\n");
         writer.write("    \"totalVesselsLength\": " + (stats != null ? stats.totalLength : totalLength) + ",\n");
         writer.write("    \"averageVesselsLength\": " + (stats != null ? stats.averageBranchLength : (treeCount > 0 ? totalLength / (double)treeCount : 0.0)) + ",\n");
-        writer.write("    \"averageSegmentLength\": " + (skel.edgesLengths.size > 0 ? totalLength / (double)skel.edgesLengths.size : 0.0) + ",\n");
+        writer.write("    \"averageSegmentLength\": " + (stats != null ? stats.averageSegmentLength : (skel.edgesLengths.size > 0 ? totalLength / (double)skel.edgesLengths.size : 0.0)) + ",\n");
         writer.write("    \"averageVesselDiameter\": " + (stats != null ? stats.averageVesselDiameter : data.averageVesselDiameter) + ",\n");
         writer.write("    \"medialELacunarity\": " + (stats != null ? stats.ELacunarityMedial : data.lacunarity.elMedial) + ",\n");
         writer.write("    \"meanELacunarity\": " + (stats != null ? stats.meanEl : data.lacunarity.elMean) + ",\n");
@@ -151,13 +291,59 @@ public class OverlayDataExporter
         writer.write("    \"medialFLacunarity\": " + (stats != null ? stats.FLacunarityMedial : data.lacunarity.flMedial) + ",\n");
         writer.write("    \"meanFLacunarity\": " + (stats != null ? stats.meanFl : data.lacunarity.flMean) + ",\n");
         writer.write("    \"fLacunarityGradient\": " + (stats != null ? stats.FLacunarityCurve : data.lacunarity.flCurve) + ",\n");
-        writer.write("    \"averageSegmentDiameter\": " + computeAverageDiameter(skel, scale) + "\n");
+        writer.write("    \"averageSegmentDiameter\": " + computeAverageDiameter(skel, scale) + ",\n");
+        writeFractalBoxCount(writer, data, stats, width, height);
         writer.write("  }");
+    }
+
+    private static void writeFractalBoxCount(
+        Writer writer,
+        Analyzer.Data data,
+        Analyzer.Stats stats,
+        int width,
+        int height
+    ) throws IOException
+    {
+        FractalBoxCount.Result result = stats != null && stats.fractalBoxCount != null ?
+            stats.fractalBoxCount : data.fractalBoxCount;
+        boolean valid = result != null && result.valid;
+
+        writer.write("    \"fractalBoxCount\": {\n");
+        writer.write("      \"method\": ");
+        writeJsonString(writer, FractalBoxCount.METHOD);
+        writer.write(",\n      \"analysisObject\": ");
+        writeJsonString(writer, FractalBoxCount.ANALYSIS_OBJECT);
+        writer.write(",\n      \"gridPolicy\": ");
+        writeJsonString(writer, FractalBoxCount.GRID_POLICY);
+        writer.write(",\n      \"scalePolicy\": ");
+        writeJsonString(writer, FractalBoxCount.SCALE_POLICY);
+        writer.write(",\n      \"imageWidth\": " + (result != null && result.imageWidth > 0 ? result.imageWidth : width));
+        writer.write(",\n      \"imageHeight\": " + (result != null && result.imageHeight > 0 ? result.imageHeight : height));
+        writer.write(",\n      \"valid\": " + valid);
+        writer.write(",\n      \"invalidReason\": ");
+        writeJsonString(writer, result == null ? "not-computed" :
+            (result.invalidReason != null ? result.invalidReason : ""));
+        writer.write(",\n      \"dimension\": ");
+        writeFiniteDoubleOrNull(writer, valid ? result.dimension : Double.NaN);
+        writer.write(",\n      \"rSquared\": ");
+        writeFiniteDoubleOrNull(writer, valid ? result.rSquared : Double.NaN);
+        writer.write(",\n      \"boxSizes\": ");
+        writeIntArray(writer, result != null ? result.boxSizes : null);
+        writer.write(",\n      \"boxCounts\": ");
+        writeLongArray(writer, result != null ? result.boxCounts : null);
+        writer.write("\n    }");
     }
 
     private static void writeAnalysisParameters(Writer writer, AnalyzerParameters params) throws IOException
     {
         writer.write("  \"analysisParameters\": {\n");
+        writer.write("    \"inputMode\": \"" + params.inputMode() + "\",\n");
+        writer.write("    \"useBinaryMask\": " + params.shouldUseBinaryMask + ",\n");
+        writer.write("    \"binaryRemoveSmallParticles\": " + params.binaryRemoveSmallParticles + ",\n");
+        writer.write("    \"binarySmallParticleRadius\": " + params.binarySmallParticleRadius + ",\n");
+        writer.write("    \"binaryFillHoles\": " + params.binaryFillHoles + ",\n");
+        writer.write("    \"binaryHoleRadius\": " + params.binaryHoleRadius + ",\n");
+        writer.write("    \"effectiveResizeFactor\": " + params.effectiveResizeFactor() + ",\n");
         writer.write("    \"lowThreshold\": " + params.thresholdLow + ",\n");
         writer.write("    \"highThreshold\": " + params.thresholdHigh + ",\n");
         writer.write("    \"vesselThickness\": ");
@@ -170,7 +356,10 @@ public class OverlayDataExporter
         writer.write("    \"minAreaLengthRatio\": " + params.minAreaLengthRatio + ",\n");
         writer.write("    \"skeletonizer\": \"" + (params.shouldUseFastSkeletonizer ? "Fast" : "Thorough") + "\",\n");
         writer.write("    \"maxSkeletonSteps\": " + params.maxSkelIterations + ",\n");
+        writer.write("    \"mergeNearbyJunctions\": " + params.shouldMergeNearbyJunctions + ",\n");
+        writer.write("    \"maxJunctionMergeDistancePx\": " + params.maxJunctionMergeDistance + ",\n");
         writer.write("    \"scalingFactor\": " + params.linearScalingFactor + ",\n");
+        writer.write("    \"normalizeOutputData\": " + params.shouldNormalizeOutputData + ",\n");
         writer.write("    \"transformedColors\": " + params.shouldRemapColors + ",\n");
         writer.write("    \"hueTransformWeight\": " + params.hueTransformWeight + ",\n");
         writer.write("    \"brightnessWeight\": " + params.brightnessTransformWeight + ",\n");
@@ -198,15 +387,23 @@ public class OverlayDataExporter
     private static void writeUiAnalysisParameters(Writer writer, AnalyzerParameters params) throws IOException
     {
         writer.write("    \"analysis\": {\n");
+        writer.write("      \"useBinaryMask\": " + params.shouldUseBinaryMask + ",\n");
+        writer.write("      \"binaryRemoveSmallParticles\": " + params.binaryRemoveSmallParticles + ",\n");
+        writer.write("      \"binarySmallParticleRadius\": " + params.binarySmallParticleRadius + ",\n");
+        writer.write("      \"binaryFillHoles\": " + params.binaryFillHoles + ",\n");
+        writer.write("      \"binaryHoleRadius\": " + params.binaryHoleRadius + ",\n");
         writer.write("      \"computeLacunarity\": " + params.shouldComputeLacunarity + ",\n");
         writer.write("      \"computeThickness\": " + params.shouldComputeThickness + ",\n");
         writer.write("      \"skeletonizer\": \"" + (params.shouldUseFastSkeletonizer ? "Fast (Zha84)" : "Thorough (Lee94)") + "\",\n");
         writer.write("      \"capSkeletonSteps\": " + params.shouldCapSkelIterations + ",\n");
         writer.write("      \"maxSkeletonSteps\": " + params.maxSkelIterations + ",\n");
+        writer.write("      \"mergeNearbyJunctions\": " + params.shouldMergeNearbyJunctions + ",\n");
+        writer.write("      \"maxJunctionMergeDistancePx\": " + params.maxJunctionMergeDistance + ",\n");
         writer.write("      \"resizeInputs\": " + params.shouldResizeImage + ",\n");
         writer.write("      \"resizeInputsPercent\": " + (params.resizingFactor * 100.0) + ",\n");
         writer.write("      \"applyMeasurementScale\": " + params.shouldApplyLinearScale + ",\n");
         writer.write("      \"measurementScalePercent\": " + (params.linearScalingFactor * 100.0) + ",\n");
+        writer.write("      \"normalizeOutputData\": " + params.shouldNormalizeOutputData + ",\n");
         writer.write("      \"fillHoles\": " + params.shouldFillHoles + ",\n");
         writer.write("      \"fillHolesPixels\": " + params.fillHolesValue + ",\n");
         writer.write("      \"removeParticles\": " + params.shouldRemoveSmallParticles + ",\n");
@@ -424,6 +621,29 @@ public class OverlayDataExporter
             }
         }
         writer.write("]");
+    }
+
+    private static void writeLongArray(Writer writer, long[] values) throws IOException
+    {
+        writer.write("[");
+        if (values != null) {
+            for (int i = 0; i < values.length; i++) {
+                if (i > 0)
+                    writer.write(", ");
+                writer.write(Long.toString(values[i]));
+            }
+        }
+        writer.write("]");
+    }
+
+    private static void writeFiniteDoubleOrNull(Writer writer, double value) throws IOException
+    {
+        writer.write(Double.isFinite(value) ? Double.toString(value) : "null");
+    }
+
+    private static void writeNullableDouble(Writer writer, Double value) throws IOException
+    {
+        writer.write(value != null && Double.isFinite(value.doubleValue()) ? value.toString() : "null");
     }
 
     private static void writeJsonString(Writer writer, String value) throws IOException

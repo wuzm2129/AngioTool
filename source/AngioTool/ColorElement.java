@@ -25,6 +25,15 @@ public class ColorElement
         panel = new RoundedPanel();
         panel.setCornerRadius(7);
         panel.setBackground(this.color.toColor());
+        panel.setPreferredSize(new java.awt.Dimension(30, 30));
+        panel.setToolTipText(name);
+        panel.setFocusable(true);
+        panel.getAccessibleContext().setAccessibleName(name);
+        panel.getInputMap().put(KeyStroke.getKeyStroke("SPACE"), "chooseColor");
+        panel.getInputMap().put(KeyStroke.getKeyStroke("ENTER"), "chooseColor");
+        panel.getActionMap().put("chooseColor", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { selectColor(); }
+        });
         panel.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -56,7 +65,9 @@ public class ColorElement
 
     void selectColor()
     {
-        Color background = JColorChooser.showDialog(null, name, color.toColor());
+        if (!panel.isEnabled())
+            return;
+        Color background = JColorChooser.showDialog(panel, name, color.toColor());
         if (background != null) {
             color = new Rgb(background);
             panel.setBackground(background);

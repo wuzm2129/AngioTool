@@ -31,6 +31,19 @@ public class SizeColorEntry extends NumberEntry
     }
 
     @Override
+    public JPanel buildRow()
+    {
+        JPanel panel = super.buildRow();
+        java.awt.Component input = ((java.awt.BorderLayout)panel.getLayout())
+            .getLayoutComponent(java.awt.BorderLayout.EAST);
+        JPanel trailing = new JPanel(new java.awt.BorderLayout(8, 0));
+        trailing.add(input, java.awt.BorderLayout.CENTER);
+        trailing.add(colorElem.panel, java.awt.BorderLayout.EAST);
+        panel.add(trailing, java.awt.BorderLayout.EAST);
+        return panel;
+    }
+
+    @Override
     public GroupLayout.Group addToSeqGroup(GroupLayout.Group seqGroup)
     {
         return colorElem.addWithWidth(super.addToSeqGroup(seqGroup));

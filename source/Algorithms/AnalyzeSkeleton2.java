@@ -28,6 +28,7 @@ public class AnalyzeSkeleton2
 
         public IntVector isolatedJunctions;
         public IntVector removedJunctions;
+        public int mergedJunctionRegionCount;
         public IntVector slabList;
         public IntVector edgesTrees;
         public IntVector edgesVerts;
@@ -72,6 +73,7 @@ public class AnalyzeSkeleton2
             toRevisit = resetIntVector(toRevisit);
             isolatedJunctions = resetIntVector(isolatedJunctions);
             removedJunctions = resetIntVector(removedJunctions);
+            mergedJunctionRegionCount = 0;
             slabList = resetIntVector(slabList);
             edgesTrees = resetIntVector(edgesTrees);
             edgesVerts = resetIntVector(edgesVerts);
@@ -151,6 +153,17 @@ public class AnalyzeSkeleton2
         int height,
         int breadth
     ) {
+        analyze(result, skeletonImages, width, height, breadth, 0.0);
+    }
+
+    public static void analyze(
+        Result result,
+        byte[] skeletonImages,
+        int width,
+        int height,
+        int breadth,
+        double maxJunctionMergeDistance
+    ) {
         result.reset();
 
         breadth = Math.min(Math.max(1, breadth), MAX_BREADTH);
@@ -161,9 +174,6 @@ public class AnalyzeSkeleton2
         tagImages(scratch, result, skeletonImages, width, height, breadth);
 
         int nTrees = markTreesOnImages(scratch, result, skeletonImages, width, height, breadth);
-        if (nTrees <= 0)
-            nTrees = 1;
-
         result.treeCount = nTrees;
         //resizeAndZeroIntVector(result.triplePointCounts, nTrees);
         //resizeAndZeroIntVector(result.quadruplePointCounts, nTrees);
@@ -177,7 +187,7 @@ public class AnalyzeSkeleton2
 
         buildSkeletonGraphs(scratch, result, skeletonImages, width, height, breadth, nTrees);
 
-        isolateDominantJunctions(scratch, result, width, height);
+        isolateDominantJunctions(scratch, result, width, height, maxJunctionMergeDistance);
 
         scratch.release();
     }
@@ -623,7 +633,7 @@ public class AnalyzeSkeleton2
                     vert != vertExclude &&
                     !(xx == xExclude && yy == yExclude && zz == zExclude)
                 ) {
-                    finalVertIdx = vert;
+                    finalVertIdx = vert - 1;
                     modeEnd = JUNCTION;
                     length += calculateDistance(x, y, z, xx, yy, zz);
                     break;
@@ -645,34 +655,137 @@ public class AnalyzeSkeleton2
         result.edgesLengths.add(length);
     }
 
-    static void isolateDominantJunctions(Scratch scratch, Result result, int width, int height)
+    static void isolateDominantJunctions(
+        Scratch scratch,
+        Result result,
+        int width,
+        int height,
+        double maxMergeDistance
+    )
     {
+        if (!Double.isFinite(maxMergeDistance) || maxMergeDistance < 0.0)
+            throw new IllegalArgumentException("Junction merge distance must be finite and nonnegative");
+        int area = width * height;
+        int maxId = 0;
+        for (int id : scratch.junctionVertexMap)
+            maxId = Math.max(maxId, id);
+        int[] parent = new int[maxId + 1];
+        for (int id = 0; id <= maxId; id++)
+            parent[id] = id;
+        if (maxMergeDistance > 0.0) {
+            for (int i = 0; i < result.edgesLengths.size; i++) {
+                int edgeOffset = 3 * i;
+                int modes = result.edgesVerts.buf[edgeOffset];
+                if ((modes >>> 2) != JUNCTION || (modes & 3) != JUNCTION ||
+                        result.edgesLengths.buf[i] > maxMergeDistance)
+                    continue;
+                int first = result.edgesVerts.buf[edgeOffset + 1] + 1;
+                int second = result.edgesVerts.buf[edgeOffset + 2] + 1;
+                if (first > 0 && first <= maxId && second > 0 && second <= maxId && first != second)
+                    union(parent, first, second);
+            }
+        }
+        for (int id = 1; id <= maxId; id++) {
+            int root = findRoot(parent, id);
+            if (root != id)
+                result.mergedJunctionRegionCount++;
+        }
+        int[] degree = new int[maxId + 1];
+        int[] count = new int[maxId + 1];
+        double[] sumX = new double[maxId + 1];
+        double[] sumY = new double[maxId + 1];
+        double[] sumZ = new double[maxId + 1];
+        int[] representative = new int[maxId + 1];
+        Arrays.fill(representative, -1);
         for (int i = 0; i < result.junctionVoxels.size; i += 3) {
             int x = result.junctionVoxels.buf[i];
-            int y = result.junctionVoxels.buf[i+1];
-            int pos = scratch.junctionMap2d[x + width * y];
-            if (pos <= 0)
-                continue;
-
-            result.isolatedJunctions.add(pos - 1);
-            scratch.junctionMap2d[x + width * y] = 0;
-
-            for (int j = 0; j < 9; j++) {
-                if (j == 4)
-                    continue;
-
-                int xx = x + (j % 3) - 1;
-                int yy = y + (j / 3) - 1;
-                int p = scratch.junctionMap2d[xx + width * yy];
-                if (p > 0) {
-                    result.removedJunctions.add(p - 1);
-                    scratch.junctionMap2d[xx + width * yy] = 0;
+            int y = result.junctionVoxels.buf[i + 1];
+            int z = result.junctionVoxels.buf[i + 2];
+            int id = findRoot(parent, scratch.junctionVertexMap[x + width * y + area * z]);
+            count[id]++;
+            sumX[id] += x;
+            sumY[id] += y;
+            sumZ[id] += z;
+        }
+        // A non-junction path has degree <= 2. Count its contacts with junction
+        // regions, not the number of adjacent junction pixels. A returning path
+        // contributes two contacts; a one-pixel raster shortcut contributes one.
+        int[] contacts = new int[26];
+        for (IntVector points : new IntVector[] {result.endPoints, result.slabVoxels}) {
+            for (int i = 0; i < points.size; i += 3) {
+                int x = points.buf[i];
+                int y = points.buf[i + 1];
+                int z = points.buf[i + 2];
+                int nContacts = 0;
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dx = -1; dx <= 1; dx++) {
+                            int xx = x + dx, yy = y + dy, zz = z + dz;
+                            if (xx < 0 || xx >= width || yy < 0 || yy >= height ||
+                                    zz < 0 || zz >= scratch.breadth)
+                                continue;
+                            int id = scratch.junctionVertexMap[xx + width * yy + area * zz];
+                            if (id == 0)
+                                continue;
+                            id = findRoot(parent, id);
+                            boolean seen = false;
+                            for (int c = 0; c < nContacts; c++)
+                                seen |= contacts[c] == id;
+                            if (!seen)
+                                contacts[nContacts++] = id;
+                        }
+                    }
                 }
+                for (int c = 0; c < nContacts; c++)
+                    degree[contacts[c]]++;
             }
+        }
+        double[] bestDistance = new double[maxId + 1];
+        Arrays.fill(bestDistance, Double.POSITIVE_INFINITY);
+        for (int i = 0; i < result.junctionVoxels.size; i += 3) {
+            int x = result.junctionVoxels.buf[i];
+            int y = result.junctionVoxels.buf[i + 1];
+            int z = result.junctionVoxels.buf[i + 2];
+            int id = findRoot(parent, scratch.junctionVertexMap[x + width * y + area * z]);
+            double distance = calculateDistance(x, y, z,
+                sumX[id] / count[id], sumY[id] / count[id], sumZ[id] / count[id]);
+            if (degree[id] >= 3 && distance < bestDistance[id]) {
+                bestDistance[id] = distance;
+                representative[id] = i;
+            }
+        }
+        for (int i = 0; i < result.junctionVoxels.size; i += 3) {
+            int id = findRoot(parent, scratch.junctionVertexMap[result.junctionVoxels.buf[i] +
+                width * result.junctionVoxels.buf[i + 1] + area * result.junctionVoxels.buf[i + 2]]);
+            if (representative[id] == i)
+                result.isolatedJunctions.add(i);
+            else
+                result.removedJunctions.add(i);
         }
     }
 
-    static double calculateDistance(int x1, int y1, int z1, int x2, int y2, int z2)
+    static int findRoot(int[] parent, int value)
+    {
+        int root = value;
+        while (parent[root] != root)
+            root = parent[root];
+        while (parent[value] != value) {
+            int next = parent[value];
+            parent[value] = root;
+            value = next;
+        }
+        return root;
+    }
+
+    static void union(int[] parent, int first, int second)
+    {
+        int rootFirst = findRoot(parent, first);
+        int rootSecond = findRoot(parent, second);
+        if (rootFirst != rootSecond)
+            parent[rootSecond] = rootFirst;
+    }
+
+    static double calculateDistance(double x1, double y1, double z1, double x2, double y2, double z2)
     {
         double dx = (double)(x2 - x1);
         double dy = (double)(y2 - y1);

@@ -2,23 +2,20 @@ package AngioTool;
 
 import Algorithms.PreprocessColor;
 import Pixels.ArgbBuffer;
-import Pixels.Canvas;
 import Pixels.ImageFile;
 import Utils.FloatBufferPool;
 import Utils.ISliceRunner;
 import Utils.Misc;
-import Utils.RefVector;
 import Xlsx.*;
 import java.awt.Color;
+import java.awt.BorderLayout;
+import java.awt.GridLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
-import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Rectangle;
-import java.awt.Toolkit;
 import java.awt.event.*;
-import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.awt.image.Raster;
@@ -30,37 +27,37 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.LinkedBlockingQueue;
 import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
+import javax.swing.border.EmptyBorder;
+import com.formdev.flatlaf.icons.FlatFileViewFloppyDriveIcon;
+import com.formdev.flatlaf.icons.FlatFileChooserDetailsViewIcon;
+import com.formdev.flatlaf.icons.FlatWindowMaximizeIcon;
 
-public class ImagingWindow extends JFrame implements ActionListener, KeyListener
+public class ImagingWindow extends JPanel implements ActionListener, KeyListener
 {
     public static class ImagingDisplay extends JPanel implements MouseMotionListener, MouseWheelListener
     {
         public static final double ZOOM_BASE = 1.2;
 
         boolean waiting = false;
-        boolean isTimerActive = false;
         AnalyzerParameters pendingParams = null;
 
         ArgbBuffer source;
-        int[] rowScratch;
-        float[] blurWnd;
         float[] luminanceTable;
         int imgWidth;
         int imgHeight;
 
         BufferedImage drawingImage;
+        BufferedImage previewImage;
+        byte[] maskSnapshot;
+        byte[] rawSkeletonSnapshot;
+        int viewMode = 2;
         Color backgroundColor;
-        Color overlayBackColor;
         Color[] wheelColors;
         int loadTicks;
         Rectangle areaRect;
 
         AnalyzerParameters currentParams;
         Analyzer.Stats currentStats;
-        RefVector<String> statsStrings;
-        int statsWidth;
-        int statsLineHeight;
-        boolean shouldShowStats;
 
         int zoomLevels;
         boolean wasDragging;
@@ -70,42 +67,35 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         int panY;
         double imageOriginX;
         double imageOriginY;
+        boolean actualSize;
 
         final Timer loadingTimer = new Timer(100, new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent evt) {
                 if (!waiting) {
-                    isTimerActive = false;
                     loadingTimer.stop();
                 }
                 else {
-                    isTimerActive = true;
                     loadTicks++;
                     repaint();
                 }
             }
         });
 
-        public ImagingDisplay(ArgbBuffer source, boolean initiallyShowStats)
+        public ImagingDisplay(ArgbBuffer source)
         {
             this.source = source;
             this.imgWidth = source.width;
             this.imgHeight = source.height;
-            this.rowScratch = new int[Math.max(imgWidth, imgHeight)];
-            this.blurWnd = new float[25 * 3];
             this.luminanceTable = new float[255];
             this.drawingImage = new BufferedImage(imgWidth, imgHeight, BufferedImage.TYPE_INT_RGB);
-            this.backgroundColor = new Color(0);
-            this.overlayBackColor = new Color(32, 48, 128, 192);
+            this.backgroundColor = new Color(29, 32, 35);
             this.wheelColors = new Color[8];
             this.loadTicks = 0;
             this.areaRect = new Rectangle();
 
             this.currentParams = null;
             this.currentStats = null;
-            this.statsStrings = new RefVector<>(String.class);
-            this.statsWidth = 0;
-            this.shouldShowStats = initiallyShowStats;
 
             this.zoomLevels = 0;
             this.wasDragging = false;
@@ -135,8 +125,12 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
             source = newImage;
             imgWidth = source.width;
             imgHeight = source.height;
-            rowScratch = new int[Math.max(imgWidth, imgHeight)];
+            if (drawingImage != null)
+                drawingImage.flush();
             drawingImage = new BufferedImage(imgWidth, imgHeight, BufferedImage.TYPE_INT_RGB);
+            maskSnapshot = null;
+            rawSkeletonSnapshot = null;
+            refreshPreview();
             imageOriginX = 0.5 * imgWidth;
             imageOriginY = 0.5 * imgHeight;
         }
@@ -156,65 +150,28 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         @Override
         public void paintComponent(Graphics g)
         {
-            g.getClipBounds(areaRect);
+            super.paintComponent(g);
+            areaRect.setBounds(0, 0, getWidth(), getHeight());
+            if (drawingImage == null)
+                return;
 
             if (areaRect.width <= 0 || areaRect.height <= 0 || imgWidth <= 0 || imgHeight <= 0) {
                 super.paintComponent(g);
                 return;
             }
 
-            if (!waiting || !isTimerActive) {
-                double zoomFactor = getZoomFactor(this.zoomLevels);
-
-                double wRatio = (double)areaRect.width / (double)this.imgWidth;
-                double hRatio = (double)areaRect.height / (double)this.imgHeight;
-
-                double scaleFactor = 1.0 / (zoomFactor * Math.min(wRatio, hRatio));
-
-                int dPanX = this.panStartX - this.panX;
-                if (dPanX != 0)
-                    this.imageOriginX += dPanX * scaleFactor;
-
-                int dPanY = this.panStartY - this.panY;
-                if (dPanY != 0)
-                    this.imageOriginY += dPanY * scaleFactor;
-
-                this.panStartX = this.panX;
-                this.panStartY = this.panY;
-
-                int srcX = (int)(this.imageOriginX - areaRect.width * 0.5 * scaleFactor + 0.5);
-                int srcY = (int)(this.imageOriginY - areaRect.height * 0.5 * scaleFactor + 0.5);
-                int srcW = (int)(areaRect.width * scaleFactor + 0.5);
-                int srcH = (int)(areaRect.height * scaleFactor + 0.5);
-
-                int canvasX1 = Math.max((int)(-srcX / scaleFactor + 0.5), 0);
-                int canvasY1 = Math.max((int)(-srcY / scaleFactor + 0.5), 0);
-                int canvasX2 = Math.min((int)((this.imgWidth - srcX) / scaleFactor + 0.5), areaRect.width);
-                int canvasY2 = Math.min((int)((this.imgHeight - srcY) / scaleFactor + 0.5), areaRect.height);
-
-                g.drawImage(drawingImage,
-                    canvasX1,
-                    canvasY1,
-                    canvasX2,
-                    canvasY2,
-                    Math.max(srcX, 0),
-                    Math.max(srcY, 0),
-                    Math.min(srcX + srcW, this.imgWidth),
-                    Math.min(srcY + srcH, this.imgHeight),
-                    backgroundColor,
-                    null
-                );
-
-                g.setColor(backgroundColor);
-                if (canvasX1 > 0)
-                    g.fillRect(0, canvasY1, canvasX1, canvasY2 - canvasY1);
-                if (canvasX2 < areaRect.width)
-                    g.fillRect(canvasX2, canvasY1, areaRect.width - canvasX2, canvasY2 - canvasY1);
-                if (canvasY1 > 0)
-                    g.fillRect(0, 0, areaRect.width, canvasY1);
-                if (canvasY2 < areaRect.height)
-                    g.fillRect(0, canvasY2, areaRect.width, areaRect.height - canvasY2);
-            }
+            double fitScale = Math.min((double)getWidth() / imgWidth, (double)getHeight() / imgHeight);
+            double scale = actualSize ? 1.0 : fitScale * getZoomFactor(zoomLevels);
+            imageOriginX += (panStartX - panX) / scale;
+            imageOriginY += (panStartY - panY) / scale;
+            panStartX = panX;
+            panStartY = panY;
+            int x = (int)Math.round(getWidth() * 0.5 - imageOriginX * scale);
+            int y = (int)Math.round(getHeight() * 0.5 - imageOriginY * scale);
+            g.setColor(backgroundColor);
+            g.fillRect(0, 0, getWidth(), getHeight());
+            g.drawImage(getDisplayedImage(), x, y, (int)Math.round(imgWidth * scale),
+                (int)Math.round(imgHeight * scale), null);
 
             if (waiting) {
                 int centerX = areaRect.width / 2;
@@ -222,89 +179,12 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
 
                 for (int i = 0; i < wheelColors.length; i++) {
                     double angle = 2.0 * Math.PI * i / wheelColors.length;
-                    int x = (int)(20.0 * Math.cos(angle) + 0.5);
-                    int y = (int)(20.0 * Math.sin(angle) + 0.5);
+                    int dotX = (int)(20.0 * Math.cos(angle) + 0.5);
+                    int dotY = (int)(20.0 * Math.sin(angle) + 0.5);
 
                     g.setColor(wheelColors[(loadTicks + i) % wheelColors.length]);
-                    g.fillOval(centerX + x - 6, centerY + y - 6, 13, 13);
+                    g.fillOval(centerX + dotX - 6, centerY + dotY - 6, 13, 13);
                 }
-            }
-            else if (shouldShowStats && this.currentParams != null && this.currentStats != null) {
-                if (this.statsStrings.size == 0) {
-                    double linearScaleFactor = currentParams.linearScalingFactor > 0.0 ? currentParams.linearScalingFactor : 1.0;
-                    double areaScaleFactor = linearScaleFactor * linearScaleFactor;
-                    double imageArea = currentStats.imageWidth * currentStats.imageHeight * areaScaleFactor;
-                    double allantoisPercentage = currentStats.allantoisMMArea * 100.0 / imageArea;
-                    double junctionsAreaPercentage = 100.0 * currentStats.junctionsPerScaledArea;
-
-                    statsStrings.add(
-                        "Width x Height: " +
-                        currentStats.imageWidth + " x " + currentStats.imageHeight
-                    );
-                    statsStrings.add(
-                        "Explant Area, %: " +
-                        Misc.formatDouble(currentStats.allantoisMMArea, 2) + ", " +
-                        Misc.formatDouble(allantoisPercentage, 3) + "%"
-                    );
-                    statsStrings.add(
-                        "Vessels Area, %: " +
-                        Misc.formatDouble(currentStats.vesselMMArea, 2) + ", " +
-                        Misc.formatDouble(currentStats.vesselPercentageArea, 3) + "%"
-                    );
-                    statsStrings.add(
-                        "Total Junctions: " +
-                        Misc.formatDouble(currentStats.totalNJunctions)
-                    );
-                    statsStrings.add(
-                        "Junctions Density %: " +
-                        Misc.formatDouble(junctionsAreaPercentage, 5) + "%"
-                    );
-                    statsStrings.add(
-                        "Vessels Length: Total, Average: " +
-                        Misc.formatDouble(currentStats.totalLength, 3) + ", " +
-                        Misc.formatDouble(currentStats.averageBranchLength, 3)
-                    );
-                    statsStrings.add(
-                        "End Points: " +
-                        currentStats.totalNEndPoints
-                    );
-
-                    if (currentParams.shouldComputeThickness) {
-                        statsStrings.add(
-                            "Average Vessel Diameter: " +
-                            Misc.formatDouble(currentStats.averageVesselDiameter, 3)
-                        );
-                    }
-                    if (currentParams.shouldComputeLacunarity) {
-                        statsStrings.add(
-                            "E Lacunarity: Medial, Mean, Gradient: " +
-                            Misc.formatDouble(currentStats.ELacunarityMedial, 4) + ", " +
-                            Misc.formatDouble(currentStats.meanEl, 4) + ", " +
-                            Misc.formatDouble(currentStats.ELacunarityCurve, 4)
-                        );
-                        statsStrings.add(
-                            "F Lacunarity: Medial, Mean, Gradient: " +
-                            Misc.formatDouble(currentStats.FLacunarityMedial, 4) + ", " +
-                            Misc.formatDouble(currentStats.meanFl, 4) + ", " +
-                            Misc.formatDouble(currentStats.FLacunarityCurve, 4)
-                        );
-                    }
-
-                    FontMetrics metrics = g.getFontMetrics();
-                    int widestWidth = 0;
-                    for (int i = 0; i < statsStrings.size; i++)
-                        widestWidth = Math.max(widestWidth, metrics.stringWidth(statsStrings.buf[i]));
-
-                    this.statsWidth = widestWidth;
-                    this.statsLineHeight = metrics.getHeight();
-                }
-
-                g.setColor(overlayBackColor);
-                g.fillRect(4, 4, this.statsWidth + 16, this.statsLineHeight * this.statsStrings.size + 16);
-
-                g.setColor(Color.WHITE);
-                for (int i = 0; i < this.statsStrings.size; i++)
-                    g.drawString(statsStrings.buf[i], 12, (i+1) * this.statsLineHeight + 8);
             }
         }
 
@@ -347,6 +227,11 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
 
         public void zoomBy(int levels, MouseWheelEvent evt)
         {
+            if (actualSize) {
+                double fit = Math.min((double)getWidth() / imgWidth, (double)getHeight() / imgHeight);
+                this.zoomLevels = (int)Math.round(Math.log(1.0 / fit) / Math.log(ZOOM_BASE));
+                actualSize = false;
+            }
             int prevZoom = this.zoomLevels;
             this.zoomLevels = Math.min(Math.max(this.zoomLevels + levels, -16), 32);
 
@@ -378,10 +263,14 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
             this.repaint();
         }
 
-        public void toggleStats(boolean enabled)
+        public void resetView(boolean oneToOne)
         {
-            this.shouldShowStats = enabled;
-            this.repaint();
+            actualSize = oneToOne;
+            zoomLevels = 0;
+            panX = panY = panStartX = panStartY = 0;
+            imageOriginX = imgWidth * 0.5;
+            imageOriginY = imgHeight * 0.5;
+            repaint();
         }
 
         public int[] getDrawingBuffer()
@@ -389,22 +278,53 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
             return ((DataBufferInt)drawingImage.getRaster().getDataBuffer()).getData();
         }
 
+        BufferedImage getDisplayedImage()
+        {
+            return viewMode == 2 || previewImage == null ? drawingImage : previewImage;
+        }
+
+        void setViewMode(int mode)
+        {
+            viewMode = mode;
+            refreshPreview();
+            repaint();
+        }
+
+        private void refreshPreview()
+        {
+            if (viewMode == 2 || source == null) {
+                if (previewImage != null) previewImage.flush();
+                previewImage = null;
+                return;
+            }
+            if (previewImage == null || previewImage.getWidth() != imgWidth ||
+                    previewImage.getHeight() != imgHeight) {
+                if (previewImage != null) previewImage.flush();
+                previewImage = new BufferedImage(imgWidth, imgHeight, BufferedImage.TYPE_INT_RGB);
+            }
+            int[] pixels = ((DataBufferInt)previewImage.getRaster().getDataBuffer()).getData();
+            if (viewMode == 3 && rawSkeletonSnapshot != null) {
+                for (int i = 0; i < imgWidth * imgHeight; i++)
+                    pixels[i] = rawSkeletonSnapshot[i] == 0 ? 0 : 0xffffff;
+            }
+            else if (viewMode == 1 && maskSnapshot != null) {
+                for (int i = 0; i < imgWidth * imgHeight; i++)
+                    pixels[i] = maskSnapshot[i] == 0 ? 0 : 0xffffff;
+            }
+            else
+                System.arraycopy(source.pixels, 0, pixels, 0, imgWidth * imgHeight);
+        }
+
         public void notifyImageProcessing(boolean shouldCopyFromSource)
         {
             this.waiting = true;
             this.currentParams = null;
             this.currentStats = null;
-            this.statsStrings.size = 0;
-
-            int[] outPixels = getDrawingBuffer();
-            Canvas.blurArgbImage(
-                outPixels,
-                shouldCopyFromSource ? source.pixels : outPixels,
-                imgWidth,
-                imgHeight,
-                rowScratch,
-                blurWnd
-            );
+            maskSnapshot = null;
+            rawSkeletonSnapshot = null;
+            refreshPreview();
+            if (shouldCopyFromSource)
+                System.arraycopy(source.pixels, 0, getDrawingBuffer(), 0, imgWidth * imgHeight);
 
             loadingTimer.start();
             this.repaint();
@@ -414,11 +334,13 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         {
             this.currentParams = params;
             this.currentStats = stats;
-            this.statsStrings.size = 0;
 
             int[] outPixels = getDrawingBuffer();
 
             if (stats == null) {
+                maskSnapshot = null;
+            rawSkeletonSnapshot = null;
+                refreshPreview();
                 System.arraycopy(source.pixels, 0, outPixels, 0, imgWidth * imgHeight);
                 this.waiting = false;
                 this.repaint();
@@ -426,7 +348,7 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
             }
 
             float[] preprocessedImage = null;
-            if (params.shouldRemapColors && params.shouldExpandOutputToGrayScale) {
+            if (!params.shouldUseBinaryMask && params.shouldRemapColors && params.shouldExpandOutputToGrayScale) {
                 preprocessedImage = FloatBufferPool.acquireAsIs(imgWidth * imgHeight);
                 PreprocessColor.transformToMonoFloatArray(
                     preprocessedImage,
@@ -458,6 +380,11 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
             if (preprocessedImage != null)
                 FloatBufferPool.release(preprocessedImage);
 
+            // Keep an immutable display copy while the next analysis reuses its working mask.
+            maskSnapshot = java.util.Arrays.copyOf(data.analysisImage.buf, imgWidth * imgHeight);
+            rawSkeletonSnapshot = java.util.Arrays.copyOf(data.rawSkeleton, imgWidth * imgHeight);
+            refreshPreview();
+
             if (pendingParams != null) {
                 notifyImageProcessing(false);
 
@@ -488,8 +415,19 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
     String defaultPath;
     double prevImageScale;
     boolean everSaved;
+    boolean closed;
+    boolean analysisRunning;
 
     ImagingDisplay imageUi;
+    final StatisticsPanel statistics = new StatisticsPanel();
+    final JSplitPane workspace = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+    final JLabel analysisStatus = new JLabel("Analyzing...");
+    final JButton btnFit = new JButton(new FlatWindowMaximizeIcon());
+    final JButton btnActualSize = new JButton("1:1");
+    final JToggleButton viewOriginal = new JToggleButton("Original");
+    final JToggleButton viewMask = new JToggleButton("Final mask");
+    final JToggleButton viewRawSkeleton = new JToggleButton("Raw skeleton");
+    final JToggleButton viewOverlay = new JToggleButton("Skeleton overlay", true);
 
     JLabel labelZoom = new JLabel();
     JButton btnZoomIn = new JButton();
@@ -516,13 +454,26 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
 
     public ImagingWindow(AngioToolGui2 uiFrame, ArgbBuffer image, double imageScale, File sourceFile, String defaultPath)
     {
-        super(sourceFile != null ? ("Analysis - " + sourceFile.getName()) : ("Analysis (Plugin)"));
+        super(new BorderLayout());
         this.parentFrame = uiFrame;
-        this.imageUi = new ImagingDisplay(image, true);
+        this.imageUi = new ImagingDisplay(image);
         this.prevImageScale = imageScale;
         this.inputFile = sourceFile;
         this.defaultPath = defaultPath;
         this.everSaved = false;
+        ButtonGroup views = new ButtonGroup();
+        JToggleButton[] viewButtons = {viewOriginal, viewMask, viewOverlay, viewRawSkeleton};
+        for (int i = 0; i < viewButtons.length; i++) {
+            final int mode = i;
+            JToggleButton button = viewButtons[i];
+            button.setPreferredSize(UiTheme.size(130, 30));
+            button.addActionListener(e -> imageUi.setViewMode(mode));
+            views.add(button);
+        }
+        viewOriginal.setToolTipText("Input pixels at the current analysis resolution");
+        viewRawSkeleton.setToolTipText("Skeleton before terminal branch pruning, at one pixel width");
+        viewMask.setToolTipText("Final binary foreground used for measurements");
+        viewOverlay.setToolTipText("Analysis overlay; image exports always use this view");
 
         this.labelZoom.setText("Zoom:");
         this.btnZoomIn.setIcon(AngioTool.ATPlus);
@@ -534,67 +485,45 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         this.btnPanDown.setIcon(AngioTool.ATDown);
         this.btnPanRight.setIcon(AngioTool.ATRight);
 
-        this.cbShowStats.setText("Display Stats");
+        this.cbShowStats.setText("Measurements");
         this.cbShowStats.setSelected(true);
 
         this.labelSaveImage.setText("Save result image");
         Misc.setNewFontStyleOn(this.labelImageWasSaved, Font.ITALIC);
         this.labelImageWasSaved.setHorizontalAlignment(SwingConstants.TRAILING);
-        this.btnSaveImage.setIcon(AngioTool.ATFolderSmall);
+        this.btnSaveImage.setIcon(new FlatFileViewFloppyDriveIcon());
+        this.btnSaveImage.setText("Save image");
         this.textSaveImage.addKeyListener(this);
 
         this.labelSaveSpreadsheet.setText("Save stats to spreadsheet");
         Misc.setNewFontStyleOn(this.labelSpreadsheetWasSaved, Font.ITALIC);
         this.labelSpreadsheetWasSaved.setHorizontalAlignment(SwingConstants.TRAILING);
-        this.btnSaveSpreadsheet.setIcon(AngioTool.ATExcelSmall);
+        this.btnSaveSpreadsheet.setIcon(new FlatFileChooserDetailsViewIcon());
+        this.btnSaveSpreadsheet.setText("Save XLSX");
         this.textSaveSpreadsheet.addKeyListener(this);
     }
 
-    public ImagingWindow showDialog()
+    public ImagingWindow showInWorkspace()
     {
+        JPanel dialogPanel = buildContent();
+        for (AbstractButton button : new AbstractButton[] {btnZoomIn, btnZoomOut,
+                btnPanLeft, btnPanRight, btnPanUp, btnPanDown, cbShowStats,
+                btnSaveImage, btnSaveSpreadsheet, btnFit, btnActualSize})
+            button.addActionListener(this);
+
+        add(dialogPanel, BorderLayout.CENTER);
+        parentFrame.attachImage(this);
         imageUi.notifyImageProcessing(true);
         setUiInteractivity(false);
         dispatchAnalysisTask(parentFrame.buildAnalyzerParamsFromUi());
 
-        JPanel dialogPanel = new JPanel();
-        GroupLayout layout = new GroupLayout(dialogPanel);
-        dialogPanel.setLayout(layout);
-        layout.setAutoCreateGaps(true);
-        layout.setAutoCreateContainerGaps(true);
-
-        arrangeUi(layout);
-
-        int nComponents = dialogPanel.getComponentCount();
-        for (int i = 0; i < nComponents; i++) {
-            Component elem = dialogPanel.getComponent(i);
-            if (elem instanceof AbstractButton)
-                ((AbstractButton)elem).addActionListener(this);
-        }
-
-        this.addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent evt) {
-                parentFrame.closeImagingWindow(ImagingWindow.this);
-                if (parentFrame.pluginCtx != null)
-                    Misc.sendWindowCloseEvent(parentFrame);
-            }
-        });
-
-        this.getContentPane().add(dialogPanel);
-        this.pack();
-
-        Dimension preferredSize = this.getPreferredSize();
-        Dimension screenDim = Toolkit.getDefaultToolkit().getScreenSize();
-
-        this.setSize(new Dimension(
-            Math.min(preferredSize.width, (int)(screenDim.width * 0.9)),
-            Math.min(preferredSize.height, (int)(screenDim.height * 0.9))
-        ));
-
-        this.setLocation(700, 50);
-        this.setVisible(true);
-
         return this;
+    }
+
+    void initializeDivider()
+    {
+        workspace.setDividerLocation(Math.max(UiTheme.size(230, 0).width,
+            getWidth() - statistics.getPreferredSize().width));
     }
 
     public Raster getImageRaster()
@@ -607,6 +536,12 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         ImageFile.releaseImage(imageUi.source);
         imageUi.source = null;
         analyzerData.nullify();
+        imageUi.maskSnapshot = null;
+        imageUi.rawSkeletonSnapshot = null;
+        if (imageUi.previewImage != null) {
+            imageUi.previewImage.flush();
+            imageUi.previewImage = null;
+        }
 
         if (imageUi.drawingImage != null) {
             imageUi.drawingImage.flush();
@@ -614,104 +549,110 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         }
     }
 
+    public void closeSafely()
+    {
+        closed = true;
+        imageUi.loadingTimer.stop();
+        imageUi.pendingParams = null;
+        if (!analysisRunning)
+            release();
+        setVisible(false);
+    }
+
     public void updateImage(AnalyzerParameters params)
     {
+        if (closed)
+            return;
         if (imageUi.waiting) {
             imageUi.pendingParams = params;
             return;
         }
 
+        if (imageUi.currentStats != null &&
+                params.hasSameAnalysisSettings(imageUi.currentParams)) {
+            imageUi.onImageFinished(params, analyzerData, imageUi.currentStats);
+            statistics.showResults(params, imageUi.currentStats);
+            labelImageWasSaved.setText("");
+            labelSpreadsheetWasSaved.setText("");
+            return;
+        }
         setUiInteractivity(false);
 
-        double newResizeFactor = params.shouldResizeImage ? params.resizingFactor : 1.0;
+        double newResizeFactor = params.effectiveResizeFactor();
         if (newResizeFactor == prevImageScale)
             imageUi.notifyImageProcessing(false);
 
         dispatchAnalysisTask(params);
     }
 
-    private void arrangeUi(GroupLayout layout)
+    private JPanel buildContent()
     {
-        final int BS = 32;
-        final int HS = 64;
+        JPanel root = new JPanel(new BorderLayout());
+        JPanel tools = new JPanel(new BorderLayout(12, 0));
+        tools.setBorder(new EmptyBorder(10, 12, 10, 12));
+        UiTheme.tool(btnZoomIn, "Zoom in");
+        UiTheme.tool(btnZoomOut, "Zoom out");
+        UiTheme.tool(btnFit, "Fit image to window");
+        UiTheme.tool(btnActualSize, "Actual size");
+        btnActualSize.setPreferredSize(UiTheme.size(48, 32));
+        UiTheme.tool(btnPanLeft, "Pan left");
+        UiTheme.tool(btnPanRight, "Pan right");
+        UiTheme.tool(btnPanUp, "Pan up");
+        UiTheme.tool(btnPanDown, "Pan down");
+        tools.add(UiTheme.row(btnZoomOut, btnZoomIn, btnFit, btnActualSize,
+            btnPanLeft, btnPanUp, btnPanDown, btnPanRight), BorderLayout.WEST);
+        tools.add(cbShowStats, BorderLayout.EAST);
+        JPanel imageHeader = new JPanel(new BorderLayout());
+        imageHeader.add(tools, BorderLayout.NORTH);
+        JPanel views = UiTheme.row(viewOriginal, viewMask, viewOverlay, viewRawSkeleton);
+        views.setBorder(new EmptyBorder(0, 12, 8, 12));
+        imageHeader.add(views, BorderLayout.SOUTH);
+        root.add(imageHeader, BorderLayout.NORTH);
+        imageUi.setMinimumSize(new Dimension(200, 160));
+        workspace.setLeftComponent(imageUi);
+        workspace.setRightComponent(statistics);
+        workspace.setResizeWeight(1.0);
+        workspace.setContinuousLayout(true);
+        workspace.setBorder(BorderFactory.createEmptyBorder());
+        root.add(workspace, BorderLayout.CENTER);
 
-        layout.setHorizontalGroup(layout.createParallelGroup()
-            .addComponent(imageUi)
-            .addGroup(layout.createSequentialGroup()
-                .addComponent(labelZoom)
-                .addComponent(btnZoomIn, BS, BS, BS)
-                .addComponent(btnZoomOut, BS, BS, BS)
-                .addComponent(labelPan)
-                .addComponent(btnPanLeft, BS, BS, BS)
-                .addComponent(btnPanUp, BS, BS, BS)
-                .addComponent(btnPanDown, BS, BS, BS)
-                .addComponent(btnPanRight, BS, BS, BS)
-                .addGap(0, 0, Short.MAX_VALUE)
-                .addComponent(cbShowStats)
-            )
-            .addGroup(layout.createSequentialGroup()
-                .addGroup(layout.createParallelGroup()
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(labelSaveImage)
-                        .addGap(0, 0, Short.MAX_VALUE)
-                        .addComponent(labelImageWasSaved, HS, HS, HS)
-                    )
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(btnSaveImage)
-                        .addComponent(textSaveImage, 0, 0, Short.MAX_VALUE)
-                    )
-                )
-                .addGap(20)
-                .addGroup(layout.createParallelGroup()
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(labelSaveSpreadsheet)
-                        .addGap(0, 0, Short.MAX_VALUE)
-                        .addComponent(labelSpreadsheetWasSaved, HS, HS, HS)
-                    )
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(btnSaveSpreadsheet)
-                        .addComponent(textSaveSpreadsheet, 0, 0, Short.MAX_VALUE)
-                    )
-                )
-            )
-        );
+        JPanel footer = new JPanel(new BorderLayout(0, 10));
+        footer.setBorder(new EmptyBorder(10, 16, 14, 16));
+        analysisStatus.setForeground(UiTheme.MUTED);
+        footer.add(analysisStatus, BorderLayout.NORTH);
+        JPanel exports = new JPanel(new GridLayout(1, 2, 16, 0));
+        exports.add(exportField(textSaveImage, btnSaveImage, labelImageWasSaved));
+        exports.add(exportField(textSaveSpreadsheet, btnSaveSpreadsheet, labelSpreadsheetWasSaved));
+        textSaveImage.setToolTipText("Result image path; leave empty for the results folder");
+        textSaveImage.putClientProperty("JTextField.placeholderText", "Default results folder");
+        textSaveSpreadsheet.setToolTipText("XLSX path; leave empty to choose a workbook");
+        textSaveSpreadsheet.putClientProperty("JTextField.placeholderText", "Choose a workbook...");
+        footer.add(exports, BorderLayout.CENTER);
+        root.add(footer, BorderLayout.SOUTH);
+        return root;
+    }
 
-        layout.setVerticalGroup(layout.createSequentialGroup()
-            .addComponent(imageUi)
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.CENTER)
-                .addComponent(labelZoom)
-                .addComponent(btnZoomIn, BS, BS, BS)
-                .addComponent(btnZoomOut, BS, BS, BS)
-                .addComponent(labelPan)
-                .addComponent(btnPanLeft, BS, BS, BS)
-                .addComponent(btnPanUp, BS, BS, BS)
-                .addComponent(btnPanDown, BS, BS, BS)
-                .addComponent(btnPanRight, BS, BS, BS)
-                .addComponent(cbShowStats)
-            )
-            .addGap(12)
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                .addComponent(labelSaveImage)
-                .addComponent(labelImageWasSaved)
-                .addComponent(labelSaveSpreadsheet)
-                .addComponent(labelSpreadsheetWasSaved)
-            )
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.CENTER)
-                .addComponent(btnSaveImage, BS, BS, BS)
-                .addComponent(textSaveImage, BS, BS, BS)
-                .addComponent(btnSaveSpreadsheet, BS, BS, BS)
-                .addComponent(textSaveSpreadsheet, BS, BS, BS)
-            )
-        );
+    private JPanel exportField(JTextField path, JButton button, JLabel status)
+    {
+        JPanel panel = new JPanel(new BorderLayout(8, 4));
+        panel.add(path, BorderLayout.CENTER);
+        panel.add(button, BorderLayout.EAST);
+        status.setPreferredSize(new Dimension(100, 18));
+        panel.add(status, BorderLayout.SOUTH);
+        return panel;
     }
 
     void dispatchAnalysisTask(AnalyzerParameters params)
     {
-        double newResizeFactor = params.shouldResizeImage ? params.resizingFactor : 1.0;
+        if (closed)
+            return;
+        statistics.showStatus("Analyzing...", false);
+        analysisStatus.setText("Analyzing...");
+        analysisStatus.setForeground(UiTheme.MUTED);
+        double newResizeFactor = params.effectiveResizeFactor();
         boolean needsReload = newResizeFactor != prevImageScale;
 
         if (needsReload) {
-            release();
             ArgbBuffer newImage = null;
             try {
                 if (inputFile == null) {
@@ -732,7 +673,15 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
                     ImageFile.releaseImage(newImage);
 
                 Misc.showExceptionInDialogBox(ex);
+                imageUi.waiting = false;
+                imageUi.pendingParams = null;
+                imageUi.currentStats = null;
+                imageUi.loadingTimer.stop();
+                statistics.showStatus("Image could not be loaded", true);
+                analysisStatus.setText("Image could not be loaded");
                 setUiInteractivity(true);
+                btnSaveImage.setEnabled(false);
+                btnSaveSpreadsheet.setEnabled(false);
                 return;
             }
             imageUi.notifyImageProcessing(true);
@@ -740,17 +689,18 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
 
         prevImageScale = newResizeFactor;
 
-        if (params.shouldRemapColors)
+        if (!params.shouldUseBinaryMask && params.shouldRemapColors)
             PreprocessColor.computeBrightnessTable(
                 imageUi.luminanceTable,
                 params.brightnessLineSegments,
                 params.brightnessLineSegments.length / 2
             );
 
+        analysisRunning = true;
         ImagingWindow.threadPool.submit(() -> {
             try {
                 analyzerData.restart();
-                if (params.shouldRemapColors)
+                if (!params.shouldUseBinaryMask && params.shouldRemapColors)
                     analyzerData.updateBrightnessTable(params.brightnessLineSegments, params.brightnessLineSegments.length / 2);
 
                 Analyzer.Stats stats = Analyzer.analyze(
@@ -762,11 +712,20 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
                 );
 
                 SwingUtilities.invokeLater(() -> {
+                    analysisRunning = false;
+                    if (closed) {
+                        release();
+                        return;
+                    }
                     AnalyzerParameters nextParams = imageUi.onImageFinished(params, analyzerData, stats);
                     if (nextParams != null) {
                         dispatchAnalysisTask(nextParams);
                     }
                     else {
+                        statistics.showResults(params, stats);
+                        analysisStatus.setText(stats.valid ? "Analysis complete" :
+                            "Invalid analysis: " + stats.invalidReason);
+                        analysisStatus.setForeground(stats.valid ? UiTheme.MUTED : UiTheme.ERROR);
                         setUiInteractivity(true);
                     }
                 });
@@ -774,7 +733,25 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
             catch (Throwable t) {
                 final Throwable error = t;
                 SwingUtilities.invokeLater(() -> {
+                    analysisRunning = false;
+                    if (closed) {
+                        release();
+                        return;
+                    }
                     imageUi.onImageFinished(params, analyzerData, null);
+                    AnalyzerParameters pending = imageUi.pendingParams;
+                    imageUi.pendingParams = null;
+                    if (pending != null) {
+                        imageUi.notifyImageProcessing(true);
+                        dispatchAnalysisTask(pending);
+                        return;
+                    }
+                    statistics.showStatus("Analysis failed", true);
+                    analysisStatus.setText("Analysis failed");
+                    analysisStatus.setForeground(UiTheme.ERROR);
+                    setUiInteractivity(true);
+                    btnSaveImage.setEnabled(false);
+                    btnSaveSpreadsheet.setEnabled(false);
                     Misc.showExceptionInDialogBox(error);
                 });
             }
@@ -783,8 +760,18 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
 
     void setUiInteractivity(boolean enabled)
     {
+        if (enabled && imageUi.currentStats == null) {
+            viewOriginal.setSelected(true);
+            imageUi.setViewMode(0);
+        }
+        viewOriginal.setEnabled(enabled);
+        viewMask.setEnabled(enabled && imageUi.currentStats != null);
+        viewOverlay.setEnabled(enabled && imageUi.currentStats != null);
+        viewRawSkeleton.setEnabled(enabled && imageUi.currentStats != null);
         btnZoomIn.setEnabled(enabled);
         btnZoomOut.setEnabled(enabled);
+        btnFit.setEnabled(enabled);
+        btnActualSize.setEnabled(enabled);
         btnPanLeft.setEnabled(enabled);
         btnPanUp.setEnabled(enabled);
         btnPanRight.setEnabled(enabled);
@@ -807,12 +794,8 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
             if (filePath == null || filePath.length() == 0) {
                 File defaultResultFile = getDefaultResultImageFile(inputFile);
                 if (defaultResultFile != null) {
-                    File resultsFolder = defaultResultFile.getParentFile();
                     try {
-                        if (resultsFolder.exists() && !resultsFolder.isDirectory())
-                            throw new IOException("Result path is not a folder: " + resultsFolder.getAbsolutePath());
-                        if (!resultsFolder.exists() && !resultsFolder.mkdirs())
-                            throw new IOException("Could not create result folder: " + resultsFolder.getAbsolutePath());
+                        ensureResultFolderExists(defaultResultFile);
                     }
                     catch (Throwable ex) {
                         Misc.showExceptionInDialogBox(ex);
@@ -888,6 +871,19 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         return new File(new File(sourceFolder, "results"), "ana_" + outputName);
     }
 
+    static void ensureResultFolderExists(File resultFile) throws IOException
+    {
+        File resultsFolder = resultFile != null ? resultFile.getParentFile() : null;
+        if (resultsFolder == null)
+            throw new IOException("Result folder could not be determined");
+        if (resultsFolder.isDirectory())
+            return;
+        if (resultsFolder.exists())
+            throw new IOException("Result path is not a folder: " + resultsFolder.getAbsolutePath());
+        if (!resultsFolder.mkdirs() && !resultsFolder.isDirectory())
+            throw new IOException("Could not create result folder: " + resultsFolder.getAbsolutePath());
+    }
+
     void saveResultSpreadsheet()
     {
         if (imageUi.currentParams == null || imageUi.currentStats == null)
@@ -900,7 +896,7 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
             outStrings,
             existingXlsxFile,
             defaultPath,
-            this
+            parentFrame
         );
         if (sheets == null)
             return;
@@ -950,7 +946,17 @@ public class ImagingWindow extends JFrame implements ActionListener, KeyListener
         else if (source == btnPanRight)
             imageUi.panBy(1, 0);
         else if (source == cbShowStats)
-            imageUi.toggleStats(cbShowStats.isSelected());
+        {
+            statistics.setVisible(cbShowStats.isSelected());
+            workspace.setDividerSize(cbShowStats.isSelected() ? 6 : 0);
+            if (cbShowStats.isSelected())
+                workspace.setDividerLocation(Math.max(250,
+                    workspace.getWidth() - statistics.getPreferredSize().width));
+        }
+        else if (source == btnFit)
+            imageUi.resetView(false);
+        else if (source == btnActualSize)
+            imageUi.resetView(true);
         else if (source == btnSaveImage)
             saveResultImage();
         else if (source == btnSaveSpreadsheet)

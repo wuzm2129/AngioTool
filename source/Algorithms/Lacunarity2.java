@@ -25,32 +25,6 @@ public class Lacunarity2
 
     public static void computeLacunarity(Statistics stats, byte[] image, int width, int height, int numberOfBins, int minSize, int inc)
     {
-        int minX = width;
-        int minY = height;
-        int maxX = 0;
-        int maxY = 0;
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int isWhite = image[x + width * y] >> 31; // no AND with 0xff
-                minX = Math.min(minX, (x & isWhite) | (width & ~isWhite));
-                minY = Math.min(minY, (y & isWhite) | (height & ~isWhite));
-                maxX = Math.max(maxX, x & isWhite);
-                maxY = Math.max(maxY, y & isWhite);
-            }
-        }
-
-        final int selWidth = maxX - minX + 1;
-        final int selHeight = maxY - minY + 1;
-        final int smallDimension = Math.min(selWidth, selHeight);
-        final int factor = (smallDimension - minSize) / numberOfBins;
-
-        int minMedialDiff = -1;
-        int medialBox = 0;
-
-        double eLacTotal = 0.0;
-        double fLacTotal = 0.0;
-
         stats.boxTable.size = 0;
         stats.el3.size = 0;
         stats.fl3.size = 0;
@@ -59,6 +33,44 @@ public class Lacunarity2
         stats.logBoxSizes.size = 0;
         stats.logElambda3p1.size = 0;
         stats.logFlambda3p1.size = 0;
+        stats.elCurve = 0.0;
+        stats.flCurve = 0.0;
+        stats.elMedial = 0.0;
+        stats.flMedial = 0.0;
+        stats.elMean = 0.0;
+        stats.flMean = 0.0;
+
+        int minX = width;
+        int minY = height;
+        int maxX = 0;
+        int maxY = 0;
+        boolean hasForeground = false;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int isWhite = image[x + width * y] >> 31; // no AND with 0xff
+                hasForeground |= isWhite != 0;
+                minX = Math.min(minX, (x & isWhite) | (width & ~isWhite));
+                minY = Math.min(minY, (y & isWhite) | (height & ~isWhite));
+                maxX = Math.max(maxX, x & isWhite);
+                maxY = Math.max(maxY, y & isWhite);
+            }
+        }
+
+        if (!hasForeground || numberOfBins <= 0 || minSize <= 0 || inc <= 0)
+            return;
+
+        final int selWidth = maxX - minX + 1;
+        final int selHeight = maxY - minY + 1;
+        final int smallDimension = Math.min(selWidth, selHeight);
+        if (smallDimension < minSize)
+            return;
+
+        final int factor = (smallDimension - minSize) / numberOfBins;
+        int minMedialDiff = -1;
+        int medialBox = 0;
+        double eLacTotal = 0.0;
+        double fLacTotal = 0.0;
 
         for (int i = 0; i < numberOfBins; i++) {
             final int boxSize = (i < numberOfBins - 1) ? (minSize + i*factor) : smallDimension;
@@ -71,6 +83,8 @@ public class Lacunarity2
 
             int numXBox = (int)Math.ceil((double)selWidth / (double)inc - (double)boxSize / (double)inc + 1.0);
             int numYBox = (int)Math.ceil((double)selHeight / (double)inc - (double)boxSize / (double)inc + 1.0);
+            if (numXBox <= 0 || numYBox <= 0)
+                continue;
             stats.boxTable.resize(numXBox * numYBox * 2);
 
             // 00 case
@@ -166,10 +180,23 @@ public class Lacunarity2
 
         stats.elMean = stats.eLambda3.size > 0 ? eLacTotal / (double)stats.eLambda3.size : 0.0;
         stats.flMean = stats.fLambda3.size > 0 ? fLacTotal / (double)stats.fLambda3.size : 0.0;
-        stats.elMedial = stats.eLambda3.buf[medialBox];
-        stats.flMedial = stats.fLambda3.buf[medialBox];
-        stats.elCurve = findLinearRegressionFactor(stats.logBoxSizes.buf, stats.logElambda3p1.buf, numberOfBins, null);
-        stats.flCurve = findLinearRegressionFactor(stats.logBoxSizes.buf, stats.logFlambda3p1.buf, numberOfBins, null);
+        if (stats.eLambda3.size <= 0)
+            return;
+
+        stats.elMedial = stats.eLambda3.buf[Math.min(medialBox, stats.eLambda3.size - 1)];
+        stats.flMedial = stats.fLambda3.buf[Math.min(medialBox, stats.fLambda3.size - 1)];
+        stats.elCurve = findLinearRegressionFactor(
+            stats.logBoxSizes.buf,
+            stats.logElambda3p1.buf,
+            stats.eLambda3.size,
+            null
+        );
+        stats.flCurve = findLinearRegressionFactor(
+            stats.logBoxSizes.buf,
+            stats.logFlambda3p1.buf,
+            stats.fLambda3.size,
+            null
+        );
     }
 
     public static int countWhitePixels(byte[] image, int width, int height, int xStart, int yStart, int dx, int dy)

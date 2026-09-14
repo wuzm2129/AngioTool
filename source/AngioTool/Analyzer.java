@@ -33,14 +33,26 @@ public class Analyzer
         public String imageAbsolutePath;
         public int imageWidth;
         public int imageHeight;
+        public boolean valid;
+        public String invalidReason;
         public double allantoisMMArea;
+        public String areaDenominator;
         public double vesselMMArea;
         public double vesselPercentageArea;
         public double totalNJunctions;
         public double junctionsPerScaledArea;
         public double totalLength;
         public double averageBranchLength;
+        public double averageSegmentLength;
+        public int totalSegments;
         public int totalNEndPoints;
+        public int skeletonPixelCount;
+        public int isolatedSkeletonPixelCount;
+        public boolean skeletonConverged;
+        public int rawSkeletonPixelCount;
+        public int prunedSkeletonPixelCount;
+        public String pruningStatus;
+        public int mergedJunctionRegionCount;
         public double averageVesselDiameter;
         public double ELacunarityMedial;
         public double ELacunarityCurve;
@@ -48,6 +60,7 @@ public class Analyzer
         public double FLacunarityCurve;
         public double meanFl;
         public double meanEl;
+        public FractalBoxCount.Result fractalBoxCount = new FractalBoxCount.Result();
     }
 
     public static class Data
@@ -55,12 +68,18 @@ public class Analyzer
         public double convexHullArea;
         public long vesselPixelArea;
         public double averageVesselDiameter;
+        public byte[] rawSkeleton;
+        public byte[] processedSkeleton;
+        public boolean skeletonConverged;
+        public int prunedSkeletonPixelCount;
+        public String pruningStatus;
 
         // Recycling resources
         public ByteVectorOutputStream analysisImage = new ByteVectorOutputStream();
         public AnalyzeSkeleton2.Result skelResult = new AnalyzeSkeleton2.Result();
         public Particles.Data particles = new Particles.Data();
         public Lacunarity2.Statistics lacunarity = new Lacunarity2.Statistics();
+        public FractalBoxCount.Result fractalBoxCount = new FractalBoxCount.Result();
         public IntVector convexHull = new IntVector();
 
         public final float[] brightnessRemapTable;
@@ -86,23 +105,26 @@ public class Analyzer
                 particles = new Particles.Data();
             if (lacunarity == null)
                 lacunarity = new Lacunarity2.Statistics();
+            fractalBoxCount = new FractalBoxCount.Result();
             if (convexHull == null)
                 convexHull = new IntVector();
         }
 
         public void nullify()
         {
+            rawSkeleton = null;
+            processedSkeleton = null;
             analysisImage = null;
             skelResult = null;
             particles = null;
             lacunarity = null;
+            fractalBoxCount = null;
             convexHull = null;
         }
     }
 
-    public static Stats analyze(
+    private static void prepareMask(
         Data data,
-        File inFile,
         ArgbBuffer inputImage,
         AnalyzerParameters params,
         ISliceRunner sliceRunner
@@ -110,6 +132,40 @@ public class Analyzer
     {
         data.analysisImage.resize(inputImage.width * inputImage.height);
         byte[] analysisImage = data.analysisImage.buf;
+
+        if (params.shouldUseBinaryMask) {
+            for (int i = 0; i < inputImage.width * inputImage.height; i++) {
+                int rgb = inputImage.pixels[i] & 0xffffff;
+                if (rgb != 0 && rgb != 0xffffff && rgb != 0x010101)
+                    throw new IllegalArgumentException(
+                        "Binary mask requires black/white pixels (0/255 or 0/1). "
+                        + "Non-binary pixel at (" + (i % inputImage.width) + ", "
+                        + (i / inputImage.width) + "). Use Tubeness for grayscale or color images.");
+                analysisImage[i] = rgb == 0 ? 0 : (byte)255;
+            }
+            if (params.binaryRemoveSmallParticles || params.binaryFillHoles) {
+                int[] regions = IntBufferPool.acquireAsIs(inputImage.width * inputImage.height);
+                try {
+                    Particles.computeShapes(data.particles, regions, analysisImage, inputImage.pixels,
+                        inputImage.width, inputImage.height);
+                    if (params.binaryRemoveSmallParticles)
+                        Particles.fillShapes(data.particles, regions, analysisImage,
+                            inputImage.width, inputImage.height, params.binarySmallParticleRadius, true);
+                    if (params.binaryFillHoles) {
+                        // Re-label after removal so deleted particles join their surrounding background.
+                        if (params.binaryRemoveSmallParticles)
+                            Particles.computeShapes(data.particles, regions, analysisImage, inputImage.pixels,
+                                inputImage.width, inputImage.height);
+                        Particles.fillEnclosedHoles(data.particles, regions, analysisImage,
+                            inputImage.width, inputImage.height, params.binaryHoleRadius);
+                    }
+                }
+                finally {
+                    IntBufferPool.release(regions);
+                }
+            }
+            return;
+        }
 
         float[] tubenessInput = FloatBufferPool.acquireAsIs(inputImage.width * inputImage.height);
 
@@ -159,10 +215,12 @@ public class Analyzer
 
         byte[] tempImage = ByteBufferPool.acquireAsIs(inputImage.width * inputImage.height);
 
-        Filters.filterMax(tempImage, analysisImage, inputImage.width, inputImage.height); // erode
-        Filters.filterMax(analysisImage, tempImage, inputImage.width, inputImage.height); // erode
-        Filters.filterMin(tempImage, analysisImage, inputImage.width, inputImage.height); // dilate
-        Filters.filterMin(analysisImage, tempImage, inputImage.width, inputImage.height); // dilate
+        // With foreground encoded as 255, max then min is a 3x3 closing.
+        // Two passes are part of the legacy segmentation contract.
+        Filters.filterMax(tempImage, analysisImage, inputImage.width, inputImage.height);
+        Filters.filterMax(analysisImage, tempImage, inputImage.width, inputImage.height);
+        Filters.filterMin(tempImage, analysisImage, inputImage.width, inputImage.height);
+        Filters.filterMin(analysisImage, tempImage, inputImage.width, inputImage.height);
 
         ByteBufferPool.release(tempImage);
         int[] particleBuf = IntBufferPool.acquireAsIs(inputImage.width * inputImage.height);
@@ -214,7 +272,19 @@ public class Analyzer
             );
 
         IntBufferPool.release(particleBuf);
+    }
 
+    public static Stats analyze(
+        Data data,
+        File inFile,
+        ArgbBuffer inputImage,
+        AnalyzerParameters params,
+        ISliceRunner sliceRunner
+    ) throws ExecutionException
+    {
+        prepareMask(data, inputImage, params, sliceRunner);
+        byte[] analysisImage = data.analysisImage.buf;
+        data.fractalBoxCount = FractalBoxCount.compute(analysisImage, inputImage.width, inputImage.height);
         data.vesselPixelArea = Misc.countForegroundPixels(analysisImage, inputImage.width, inputImage.height);
 
         if (params.shouldComputeLacunarity)
@@ -227,7 +297,7 @@ public class Analyzer
 
         if (params.shouldUseFastSkeletonizer) {
             byte[] zha84ScratchImage = ByteBufferPool.acquireAsIs(inputImage.width * inputImage.height);
-            Zha84.skeletonize(skeletonImage, zha84ScratchImage, analysisImage, inputImage.width, inputImage.height, maxSkelIterations);
+            data.skeletonConverged = Zha84.skeletonize(skeletonImage, zha84ScratchImage, analysisImage, inputImage.width, inputImage.height, maxSkelIterations);
             ByteBufferPool.release(zha84ScratchImage);
         }
         else {
@@ -235,7 +305,7 @@ public class Analyzer
             Object[] layers = new Object[1];
             layers[0] = analysisImage;
 
-            Lee94.skeletonize(
+            data.skeletonConverged = Lee94.skeletonize(
                 skeletonImage,
                 sliceRunner,
                 MAX_WORKERS,
@@ -254,13 +324,49 @@ public class Analyzer
             skeletonImage = filteredSkeletonImage;
         }
 
+        data.rawSkeleton = Arrays.copyOf(skeletonImage, inputImage.width * inputImage.height);
+        data.prunedSkeletonPixelCount = 0;
+        data.pruningStatus = !params.shouldPruneSkeleton ? "disabled" :
+            !data.skeletonConverged ? "skipped-not-converged" : "applied";
+        if (params.shouldPruneSkeleton && data.skeletonConverged)
+            data.prunedSkeletonPixelCount = SkeletonPruning.prune(skeletonImage, inputImage.width,
+                inputImage.height, params.maxTerminalBranchLength);
+        data.processedSkeleton = Arrays.copyOf(skeletonImage, inputImage.width * inputImage.height);
+
         AnalyzeSkeleton2.analyze(
             data.skelResult,
             skeletonImage,
             inputImage.width,
             inputImage.height,
-            1
+            1,
+            params.shouldMergeNearbyJunctions ? params.maxJunctionMergeDistance : 0.0
         );
+
+        int skeletonPixelCount = 0;
+        int isolatedSkeletonPixelCount = 0;
+        for (int y = 0; y < inputImage.height; y++) {
+            for (int x = 0; x < inputImage.width; x++) {
+                int pos = x + inputImage.width * y;
+                if ((skeletonImage[pos] & 1) == 0)
+                    continue;
+
+                skeletonPixelCount++;
+                int neighbors = 0;
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (dx == 0 && dy == 0)
+                            continue;
+                        int xx = x + dx;
+                        int yy = y + dy;
+                        if (xx >= 0 && xx < inputImage.width && yy >= 0 && yy < inputImage.height &&
+                            (skeletonImage[xx + inputImage.width * yy] & 1) != 0)
+                            neighbors++;
+                    }
+                }
+                if (neighbors == 0)
+                    isolatedSkeletonPixelCount++;
+            }
+        }
 
         ByteBufferPool.release(skeletonImage);
 
@@ -292,11 +398,22 @@ public class Analyzer
         stats.imageAbsolutePath = inFile != null ? inFile.getAbsolutePath() : "null";
         stats.imageWidth = inputImage.width;
         stats.imageHeight = inputImage.height;
+        stats.fractalBoxCount = data.fractalBoxCount;
         stats.allantoisMMArea = data.convexHullArea * areaScalingFactor;
+        stats.areaDenominator = "vessel-mask-convex-hull";
         stats.totalNJunctions = data.skelResult.isolatedJunctions.size;
-        stats.junctionsPerScaledArea = (double)data.skelResult.isolatedJunctions.size / stats.allantoisMMArea;
         stats.vesselMMArea = (double)data.vesselPixelArea * areaScalingFactor;
-        stats.vesselPercentageArea = stats.vesselMMArea * 100.0 / stats.allantoisMMArea;
+        if (stats.allantoisMMArea > 0.0) {
+            stats.junctionsPerScaledArea =
+                (double)data.skelResult.isolatedJunctions.size / stats.allantoisMMArea;
+            stats.vesselPercentageArea =
+                stats.vesselMMArea * 100.0 / stats.allantoisMMArea;
+        }
+        else {
+            // An empty or degenerate mask is not a valid quantitative sample.
+            stats.junctionsPerScaledArea = 0.0;
+            stats.vesselPercentageArea = 0.0;
+        }
         stats.averageVesselDiameter = averageVesselDiameter;
         data.averageVesselDiameter = averageVesselDiameter;
         stats.ELacunarityCurve = data.lacunarity.elCurve;
@@ -308,6 +425,7 @@ public class Analyzer
 
         double totalLength = 0.0;
         int nTrees = data.skelResult.treeCount;
+        int nSegments = data.skelResult.edgesLengths.size;
         for (int i = 0; i < nTrees; i++)
             totalLength += (double)data.skelResult.totalBranchLengths.buf[i];
 
@@ -317,7 +435,20 @@ public class Analyzer
 
         stats.totalLength = totalLength * linearScalingFactor;
         stats.averageBranchLength = averageLength;
+        stats.totalSegments = nSegments;
+        stats.averageSegmentLength = nSegments > 0 ?
+            stats.totalLength / (double)nSegments : 0.0;
         stats.totalNEndPoints = data.skelResult.endPoints.size / 3;
+        stats.skeletonConverged = data.skeletonConverged;
+        stats.prunedSkeletonPixelCount = data.prunedSkeletonPixelCount;
+        stats.rawSkeletonPixelCount = skeletonPixelCount + data.prunedSkeletonPixelCount;
+        stats.pruningStatus = data.pruningStatus;
+        stats.mergedJunctionRegionCount = data.skelResult.mergedJunctionRegionCount;
+        stats.skeletonPixelCount = skeletonPixelCount;
+        stats.isolatedSkeletonPixelCount = isolatedSkeletonPixelCount;
+        stats.valid = data.vesselPixelArea > 0 && stats.allantoisMMArea > 0.0;
+        stats.invalidReason = stats.valid ? "" :
+            (data.vesselPixelArea > 0 ? "degenerate-mask-area" : "empty-segmentation");
 
         return stats;
     }
@@ -481,6 +612,7 @@ public class Analyzer
             "Junctions Density",
             "Total Vessels Length",
             "Average Vessels Length",
+            "Average Segment Length",
             "Total Number of End Points",
             "Average Vessel Diameter",
             "Medial E Lacunarity",
@@ -488,7 +620,30 @@ public class Analyzer
             "E Lacunarity Gradient",
             "Medial F Lacunarity",
             "Mean F Lacunarity",
-            "F Lacunarity Gradient"
+            "F Lacunarity Gradient",
+            "Input Mode",
+            "Binary Remove Particles",
+            "Binary Particle Radius",
+            "Binary Fill Holes",
+            "Binary Hole Radius",
+            "Fractal Dimension (Box-counting)",
+            "Fractal Fit R squared",
+            "Fractal Valid",
+            "Fractal Invalid Reason",
+            "Fractal Box Sizes (px)",
+            "Fractal Box Counts",
+            "Skeleton Converged",
+            "Pruning Status",
+            "Pruned Skeleton Pixels",
+            "Raw Skeleton Pixels",
+            "Prune Terminal Branches",
+            "Max Terminal Branch Length (px)",
+            "Merge Nearby Junctions",
+            "Max Junction Merge Distance (px)",
+            "Merged Junction Regions",
+            "Cap Skeleton Steps",
+            "Junction Policy",
+            "Normalize Output Data"
         );
 
         return writer;
@@ -532,6 +687,7 @@ public class Analyzer
             stats.junctionsPerScaledArea,
             stats.totalLength,
             stats.averageBranchLength,
+            stats.averageSegmentLength,
             stats.totalNEndPoints,
             stats.averageVesselDiameter,
             stats.ELacunarityMedial,
@@ -539,8 +695,52 @@ public class Analyzer
             stats.ELacunarityCurve,
             stats.FLacunarityMedial,
             stats.meanFl,
-            stats.FLacunarityCurve
+            stats.FLacunarityCurve,
+            params.inputMode(),
+            params.binaryRemoveSmallParticles,
+            params.binarySmallParticleRadius,
+            params.binaryFillHoles,
+            params.binaryHoleRadius,
+            fractalDimensionValue(stats.fractalBoxCount),
+            fractalFitValue(stats.fractalBoxCount),
+            stats.fractalBoxCount != null && stats.fractalBoxCount.valid,
+            fractalInvalidReason(stats.fractalBoxCount),
+            stats.fractalBoxCount != null && stats.fractalBoxCount.boxSizes != null ?
+                Arrays.toString(stats.fractalBoxCount.boxSizes) : "[]",
+            stats.fractalBoxCount != null && stats.fractalBoxCount.boxCounts != null ?
+                Arrays.toString(stats.fractalBoxCount.boxCounts) : "[]",
+            stats.skeletonConverged,
+            stats.pruningStatus,
+            stats.prunedSkeletonPixelCount,
+            stats.rawSkeletonPixelCount,
+            params.shouldPruneSkeleton,
+            params.maxTerminalBranchLength,
+            params.shouldMergeNearbyJunctions,
+            params.maxJunctionMergeDistance,
+            stats.mergedJunctionRegionCount,
+            params.shouldCapSkelIterations,
+            "connected-region-plus-short-direct-skeleton-links",
+            params.shouldNormalizeOutputData
         );
+    }
+
+    static Object fractalDimensionValue(FractalBoxCount.Result result)
+    {
+        return result != null && result.valid && Double.isFinite(result.dimension) ?
+            result.dimension : "";
+    }
+
+    static Object fractalFitValue(FractalBoxCount.Result result)
+    {
+        return result != null && result.valid && Double.isFinite(result.rSquared) ?
+            result.rSquared : "";
+    }
+
+    static String fractalInvalidReason(FractalBoxCount.Result result)
+    {
+        if (result == null)
+            return "not-computed";
+        return result.invalidReason != null ? result.invalidReason : "";
     }
 
     public static void writeError(SpreadsheetWriter sheet, Throwable exception, File inFile) throws IOException

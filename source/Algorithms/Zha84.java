@@ -23,7 +23,7 @@ public class Zha84
         return out;
     }
 
-    public static void skeletonize(
+    public static boolean skeletonize(
         byte[] outSkeletonImage,
         byte[] scratchSkeletonImage,
         byte[] inputImage,
@@ -93,5 +93,6 @@ public class Zha84
             }
             //System.out.println("nRemovals: " + nRemovals);
         } while (nRemovals != 0 && (maxSkelIterations <= 0 || ++step < maxSkelIterations));
+        return nRemovals == 0;
     }
 }

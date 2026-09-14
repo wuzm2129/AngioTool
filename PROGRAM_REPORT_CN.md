@@ -1,6 +1,10 @@
-# AngioTool 2.0 程序报告
+# AngioTool 2.1 程序报告
 
-本文档基于对 `D:\CodeProject\AngioTool` 项目的代码阅读整理，目的是为后续修改、维护和新增功能提供整体背景。
+> **2026-09-12 分形维数更新**：普通/直接二值模式均在最终掩膜上自动执行盒计数分析，输出维数、R²、独立有效性及尺度/计数信息。统计侧栏、单图/批量 Excel 和 JSON 同步接入。具体采样规则、解释边界和验证记录见 [盒计数分形维数](FRACTAL_BOX_COUNT_CN.md)。
+
+> **2026-09-07 UI 更新**：已引入随 JAR 打包的 FlatLaf 3.6.1，并改为单窗口工作台：左侧参数，右侧多图标签、画布与统计侧栏。`ImagingWindow` 保留类名，但现在继承 `JPanel`，不再创建独立图像窗口。保持既有分析、导出和共享参数行为。新增 `UiTheme`、`StatisticsPanel`、UI 冒烟测试及指标对照工具。详细实现、验证与回退边界见 [UI_MODERNIZATION_CN.md](UI_MODERNIZATION_CN.md)；下文旧 UI 描述作为历史架构背景保留。
+
+本文档基于对原始项目和 `D:\CodeProject\AngioTool 2.1` 修复副本的代码阅读整理，目的是为后续修改、维护和新增功能提供整体背景。文档开头的“当前状态与修复记录”优先于历史架构说明。
 
 ## 1. 项目概述
 
@@ -121,18 +125,23 @@ flowchart TD
 source/AngioTool/Analyzer.java
 ```
 
-`Analyzer.analyze()` 是整个系统最重要的方法，单图分析和批处理最终都会进入这里。
+`Analyzer.analyze()` 是整个系统最重要的方法，单图分析和批处理最终都会进入这里。`prepareMask()` 根据 `shouldUseBinaryMask` 选择普通增强或直接掩膜路径。
 
 ```mermaid
 flowchart TD
-    A[输入图像 ArgbBuffer] --> B{Transform Colors?}
+    A[输入图像 ArgbBuffer] --> Mode{直接二值掩膜?}
+    Mode -->|否| B{Transform Colors?}
+    Mode -->|是| Check[校验黑白像素]
+    Check --> Binary[可选去颗粒及封闭孔洞填充]
+    Binary --> H[最终血管 mask]
     B -->|是| C[PreprocessColor 色彩转灰度]
     B -->|否| D[选择最亮通道]
     C --> E[Tubeness 多尺度血管增强]
     D --> E
     E --> F[阈值二值化]
     F --> G[Filters 形态学过滤]
-    G --> H[Particles 连通域和孔洞处理]
+    G --> Cleanup[普通模式连通域和孔洞处理]
+    Cleanup --> H
     H --> I[统计血管像素面积]
     H --> J[ConvexHull 计算凸包]
     H --> K{Skeletonizer}
@@ -153,7 +162,7 @@ flowchart TD
     S --> U[SpreadsheetWriter 导出 Excel]
 ```
 
-分析管线步骤：
+普通模式分析管线步骤（第 2–7 步在二值模式下由像素校验及可选清理替代）：
 
 1. 输入图像进入 `ArgbBuffer`。
 2. 如果启用颜色变换，调用 `PreprocessColor` 将彩色图转换为适合血管识别的灰度强度图。
@@ -170,6 +179,12 @@ flowchart TD
 13. 如开启厚度计算，调用 `VesselThickness` 估算血管厚度。
 14. 汇总为 `Analyzer.Stats`。
 15. 可调用 `Analyzer.drawOverlay()` 绘制结果叠加图。
+
+### 6.1 二值模式与设置归属
+
+直接模式接受黑底白色前景的 0/255 或 0/1 灰度像素；其他像素报错并提供坐标，不做隐式阈值或反色。单图与批处理统一通过 `effectiveResizeFactor()` 禁用输入缩放。颜色变换、Tubeness、强度阈值、闭运算及高级清理被绕过；骨架算法与指标定义沿用现有实现。
+
+二值去颗粒和填洞默认关闭，由 `binaryRemoveSmallParticles`、`binarySmallParticleRadius`、`binaryFillHoles`、`binaryHoleRadius` 独立记录，不能把普通模式的同名控件参数当作本模式的有效设置。先去颗粒，再重新标记连通域并调用 `Particles.fillEnclosedHoles()`；填洞排除图像边界连通背景。此规则仍可能填掉面积阈值内的真实网孔，需人工复核。
 
 ## 7. 关键算法模块
 
@@ -236,7 +251,7 @@ source/AngioTool/AngioToolGui2.java
 - vessel intensity range
 - overlay 样式
 
-单图分析窗口：
+主窗口内的单图分析标签：
 
 ```text
 source/AngioTool/ImagingWindow.java
@@ -244,11 +259,13 @@ source/AngioTool/ImagingWindow.java
 
 职责包括：
 
-- 显示分析结果图。
+- 显示 Original / Final mask / Skeleton overlay 三种视图。
 - 支持缩放和平移。
-- 参数变化时重新调度分析任务。
+- 分析参数变化时重新调度分析任务；仅切换查看视图不重算。
 - 保存结果图。
 - 保存单图统计结果到 Excel。
+
+`ImagingDisplay.drawingImage` 始终保存可导出的叠加结果；`previewImage` 为原图或最终掩膜预览，`maskSnapshot` 保存分析完成时的掩膜副本，避免下一轮计算复用缓冲区造成显示中间态。视图选择归各图像标签所有，不属于分析参数，不改变保存图像或 ImageJ 提交结果。关闭标签时释放相关缓冲区。
 
 批处理窗口：
 
@@ -518,3 +535,189 @@ launcher-win32.c
 | Excel 导出 | `source/Xlsx/SpreadsheetWriter.java` |
 | 构建 JAR | `compile.py` |
 | 构建 EXE | `buildexe.py` |
+# AngioTool 2.1 当前状态与修复记录
+
+更新时间：2026-09-07
+
+## 1. 版本定位
+
+AngioTool 2.1 是从 `D:\CodeProject\AngioTool` 独立复制出的修复版本。原版本保留用于对照和继续使用，2.1 的修改不会回写原目录。
+
+当前版本仍采用 Java 8、Swing GUI 和原有图像分析算法，重点是提高结果安全性、可解释性和回归验证能力，而不是立即重写为其他语言。
+
+## 2. 当前分析流程
+
+普通模式的主要图像分析流程如下：
+
+```text
+输入图像
+  -> 颜色/亮度预处理
+  -> 多尺度 Gaussian + Hessian Tubeness
+  -> 强度阈值
+  -> 固定 3x3 形态学闭运算两次
+  -> 连通域、孔洞和小颗粒处理
+  -> 二值血管 mask
+  -> mask 面积与凸包面积
+  -> Zha84 或 Lee94 骨架化
+  -> 骨架拓扑分析
+  -> 长度、端点、junction、厚度、lacunarity
+  -> XLSX / JSON / overlay 输出
+```
+
+直接二值模式的前半段替换为：`原始尺寸图像 → 黑白像素校验 → 可选去小颗粒 → 可选封闭孔洞填充 → 最终 mask`。后续面积、骨架与统计阶段共用原实现；参数、导出与验证细节见本文第 6.1 节及 [UI 变更记录](UI_MODERNIZATION_CN.md)。
+
+## 3. 已完成修复
+
+### 3.1 空结果和异常尺寸
+
+- 空 mask 不再导致面积比例和 junction density 输出 `NaN` 或 `Infinity`。
+- 空骨架不再被强制解释为一棵连通树。
+- lacunarity 对空图、过小 ROI 和非法参数安全返回。
+- Tubeness 支持 `1x1`、`1xN` 和 `Nx1` 图像，不再触发镜像边界除零。
+- Tubeness 会跳过 NaN、Infinity 和负 sigma。
+
+### 3.2 统计定义
+
+- 新增 `Average Segment Length`，即总骨架长度除以分支段数量。
+- 保留旧的 `Average Vessels Length`，但其真实含义是每棵连通树的平均总长度。
+- 空或退化分割结果现在包含：
+  - `valid`
+  - `invalidReason`
+
+### 3.3 结果可追踪性
+
+JSON metrics 新增或明确记录：
+
+- `valid`
+- `invalidReason`
+- `areaDenominator`
+- `morphology`
+- `averageSegmentLength`
+- `skeletonPixelCount`
+- `isolatedSkeletonPixelCount`
+
+当前值：
+
+```text
+areaDenominator = vessel-mask-convex-hull
+morphology = 3x3-closing-twice
+```
+
+### 3.4 颜色预处理
+
+- 目标颜色和排除颜色过近时，参数验证会拒绝。
+- 颜色重映射内部也增加了最小 hue 分离保护。
+- 单图统计区域会显示无效分析原因。
+
+### 3.5 回归验证
+
+测试文件：
+
+`benchmarks/AngioTool/AnalysisRegressionTest.java`
+
+目前覆盖：
+
+- 空图 lacunarity；
+- 小于最小 box 尺寸的 ROI；
+- 单条直线骨架；
+- 简单分叉骨架；
+- 1x1 Tubeness 输入。
+
+当前结果：
+
+```text
+AnalysisRegressionTest: PASS
+```
+
+## 4. 当前指标的真实含义
+
+### Vessels Area
+
+最终二值血管 mask 的前景像素面积，不等于原始图像中的真实血管面积。
+
+### Explant Area
+
+当前实际是所有血管前景像素的凸包面积。它不是严格意义上的组织 ROI 面积，可能包含凹陷、空洞和血管区域之间的空白。
+
+### Vessels Percentage Area
+
+```text
+vessel mask area / vessel-mask convex hull area
+```
+
+只有在凸包能够合理代表组织区域时，才适合解释为组织内血管比例。
+
+### Average Vessels Length
+
+当前为：
+
+```text
+total skeleton length / connected tree count
+```
+
+它是平均连通树长度，不是平均分支段长度。
+
+### Average Segment Length
+
+当前为：
+
+```text
+total skeleton length / skeleton segment count
+```
+
+这是更接近“平均分支长度”的字段。
+
+### Average Vessel Diameter
+
+程序在骨架 slab 点计算到最近背景的距离，乘以 2 后取中位数。因此它更准确的名称是：
+
+```text
+median local mask diameter
+```
+
+不是严格的横截面平均直径。
+
+### Vessel Diameters
+
+该参数实际控制 Tubeness 的 Gaussian/Hessian sigma 尺度，不是程序最终测得的直径。
+
+## 5. 尚未完成的问题
+
+以下问题仍需真实标注数据或合成几何数据验证：
+
+1. 凸包面积作为组织面积分母可能造成系统性高估。
+2. 固定形态学闭运算可能连接相邻血管或删除细小结构。
+3. 多 sigma Tubeness 的跨尺度响应仍缺少充分的可比性验证。
+4. Zha84 和 Lee94 的骨架结果尚未完成一致性校准。
+5. junction 识别和合并对像素连接方式敏感。
+6. 骨架最大迭代步数尚未输出明确的收敛状态。
+7. 厚度算法尚未与人工测量或标准距离变换基准充分比较。
+8. 尚未有大规模人工标注集用于计算 precision、recall、Dice、长度误差和 junction 误差。
+
+## 6. 验证和构建
+
+在 2.1 目录执行：
+
+```powershell
+python compile.py
+javac -cp build -d build benchmarks\AngioTool\AnalysisRegressionTest.java
+java -cp build benchmarks.AngioTool.AnalysisRegressionTest
+```
+
+每次执行 `python compile.py` 前，必须先备份已有的 `AngioTool2.jar`。当前修复过程中已创建多个：
+
+```text
+AngioTool2-*-before-compile.jar
+```
+
+## 7. 后续路线
+
+推荐顺序：
+
+1. 增加骨架收敛状态和拓扑质量报告。
+2. 建立不同宽度、直线、弯曲、分叉、断裂和噪声图像的标准测试集。
+3. 对 Zha84 和 Lee94 进行结果差异分析。
+4. 将组织 ROI 从血管凸包中分离出来。
+5. 将形态学步骤变成明确且可记录的参数。
+6. 重新评估 Tubeness 的尺度选择和归一化。
+7. 在有可靠基准后，再决定是否迁移到 Python、C++ 或混合架构。

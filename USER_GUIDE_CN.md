@@ -1,7 +1,11 @@
-# AngioTool 2.0 中文完整使用指南
+# AngioTool 2.1 中文完整使用指南
 
-> 适用版本：当前源码中的 `AngioTool 2.0 r9 (18.07.24)`  
-> 核对日期：2026-08-11  
+> **2026-09-12：新增分形维数。** 分析完成后，Measurements 自动显示最终血管掩膜的 `Fractal dimension` 与拟合 R²；单图/批量 Excel 追加维数、R²、有效性、原因、盒子尺寸和计数六列。JSON 保存完整方法参数。无需启用 Lacunarity；小图或空图可能显示 N/A。方法、比较条件和解释边界见 [盒计数分形维数说明](FRACTAL_BOX_COUNT_CN.md)。
+
+> **2026-09-07 UI 更新**：程序已改为单窗口工作台，左侧是 Analysis、Color、Overlay 参数页，右侧是图像标签与 Measurements 统计。Open image（原 View）打开新标签，不再弹出独立分析窗口；标签右侧 × 关闭对应图像。各图像共用分析参数，分别保留缩放、平移及导出路径。Reset defaults、Save image / Save XLSX 对应原恢复默认值和保存操作。下文“分析窗口”应理解为主窗口内的图像分析区。完整变更与验证见 [UI_MODERNIZATION_CN.md](UI_MODERNIZATION_CN.md)。
+
+> 适用版本：AngioTool 2.1 修复副本<br>
+> 核对日期：2026-09-07<br>
 > 适用范围：独立 JAR、批处理和实验性 ImageJ 插件
 
 AngioTool 2.0 用于从眼科、血管生成或其他二维血管图像中提取血管区域、骨架和拓扑统计。它可以交互分析单张图像，也可以用同一组参数递归处理一批图像。
@@ -10,6 +14,16 @@ AngioTool 2.0 用于从眼科、血管生成或其他二维血管图像中提取
 
 > [!IMPORTANT]
 > AngioTool 是研究图像量化工具，不应单独用于临床诊断。任何研究结论都应结合人工质量检查、实验设计和独立统计分析。
+
+## 直接使用二值掩膜（新增）
+
+在 `Analysis → Vessel detection` 勾选 `Use binary mask directly`，再打开黑底白色前景掩膜。支持像素值为 0/255 或 0/1 的灰度掩膜；其他灰度或彩色像素会明确报错，不做隐式阈值处理。建议使用无损 PNG/TIFF，避免 JPEG 或抗锯齿产生中间灰度。
+
+此模式跳过颜色变换、Tubeness、强度阈值、形态学闭运算、Advanced cleanup 和输入缩放。`Fill Holes` 和 `Remove Particles` 可选，默认关闭，与普通模式分别保存设置。两项关闭时直接保留输入前景。启用后按等效半径筛选，面积上限约为 `π × 半径²`；填洞只填封闭背景，不填与图像边界连通的区域。两项同时启用时先去颗粒再填洞，避免恢复已删除碎片。骨架化、测量单位缩放、统计和叠加仍正常执行。厚区域可取消 `Max Skeleton Steps` 上限，检查充分细化后的结果。
+
+图像工具栏提供 `Original`（当前分析分辨率下的原图）、`Final mask`（清理后的最终掩膜）、`Skeleton overlay`（分析叠加图）。各标签独立记住视图；切换不重算、不重置缩放和平移，也不改变保存图像或 ImageJ 提交的叠加图内容。
+
+模式作用于所有打开的图像和批处理，不会自动识别或反转黑色前景。取消勾选可恢复原增强模式与界面中的参数。XLSX 末尾记录 `Input Mode` 和二值清理开关/半径（批处理在 Settings 中记录）。JSON 的 `analysisParameters` 记录模式、实际缩放比例及 `binaryRemoveSmallParticles`、`binarySmallParticleRadius`、`binaryFillHoles`、`binaryHoleRadius`。旧参数保留用于记录，二值模式下被绕过的参数不参与运算。
 
 ## 目录
 
@@ -41,7 +55,7 @@ AngioTool 2.0 用于从眼科、血管生成或其他二维血管图像中提取
 
 ### 1.2 分析管线
 
-程序对每张图像执行以下流程：
+普通模式对每张图像执行以下流程：
 
 ```text
 读取图像并按需缩放
@@ -57,6 +71,8 @@ AngioTool 2.0 用于从眼科、血管生成或其他二维血管图像中提取
 → 可选血管厚度与 lacunarity 计算
 → 绘制叠加图并导出 XLSX、PNG 和 JSON
 ```
+
+二值模式则使用：`原始尺寸输入 → 校验黑白像素 → 可选去小颗粒 → 可选封闭孔洞填充 → 最终 mask`，之后进入相同的骨架与指标计算阶段。两种清理均关闭时不改变输入前景。
 
 图像分割的最终依据是二值血管 mask。骨架、分支点、长度、直径和 lacunarity 都是在这个 mask 或其骨架上计算，因此应先保证 mask 与真实血管一致，再解释后续统计值。
 
@@ -113,39 +129,36 @@ java -jar .\AngioTool2.jar
 
 ### 3.1 主窗口
 
-![AngioTool 主窗口](screenshots/main-window.png)
+![AngioTool 主窗口](screenshots/ui-2.1/parameters.png)
 
-主窗口从上到下分为：
+主窗口包含顶部 Open image、Batch、帮助按钮，中央参数标签页，以及底部 Reset defaults、内存和参数状态。
 
-1. `View`、`Batch`、`Help` 操作区。
-2. `Analysis` 分析参数区。
-3. `Transform Colors` 颜色预处理区。
-4. `Vessel Diameters list` 和 `Vessel Intensity range` 血管增强与阈值区。
-5. `Overlay` 结果叠加显示区。
-6. `Reset To Defaults` 和内存使用显示。
+1. `Analysis`：增强尺度、阈值、mask 清理、骨架、测量与输入缩放。低频清理参数放在 `Advanced cleanup` 中。
+2. `Color`：颜色预处理、目标/排除颜色、饱和度、权重和亮度曲线。
+3. `Overlay`：轮廓、骨架、分支点、凸包和底图模式。
 
-仓库截图来自较早的 r8 界面，布局仍有参考价值，但本指南中的默认值以当前 r9 源码为准。
+较小窗口通过滚动访问下方参数。默认参数与 UI 改造前保持一致。
 
-### 3.2 分析窗口
+### 3.2 图像分析区
 
-![AngioTool 单图分析窗口](screenshots/analysis-window.png)
+![AngioTool 单图分析窗口](screenshots/ui-2.1/analysis.png)
 
-分析窗口包含：
+打开图像后，主窗口右侧的图像标签包含：
 
-- 叠加结果画布。
-- 左上角统计信息，可通过 `Display Stats` 控制显示。
+- 原图、最终掩膜、骨架叠加三种画布视图。
+- 独立的统计侧栏，可通过 `Measurements` 控制显示，不遮挡图像。
 - 缩放、平移按钮；也可使用鼠标滚轮缩放、拖动画布平移。
-- `Save result image`：保存结果图及配套结构化文件。
-- `Save stats to spreadsheet`：把当前统计写入 Excel。
+- `Save image`：保存叠加结果图及配套结构化文件，不受当前预览模式影响。
+- `Save XLSX`：把当前统计写入 Excel。
 
-缩放、平移和 `Display Stats` 只影响预览，不改变分析结果，也不会写入保存的结果图。
+缩放、平移、视图切换和 `Measurements` 只影响预览，不改变分析结果，也不会写入保存的结果图。
 
 ## 4. 推荐的标准工作流程
 
-对于一组需要互相比较的实验图像，建议采用以下顺序：
+对于普通灰度/彩色图像，建议采用以下顺序；已有二值掩膜则使用本节末尾的分支：
 
 1. 选择一张有代表性的图像。
-2. 点击 `Reset To Defaults`，建立明确起点。
+2. 点击 `Reset defaults`，建立明确起点。
 3. 在打开图像前确定是否启用 `Resize Inputs`。
 4. 先调整颜色预处理，使目标血管在分析输入中突出。
 5. 调整 `Vessel Diameters list` 和 `Vessel Intensity range`，使主要血管进入 mask。
@@ -155,26 +168,28 @@ java -jar .\AngioTool2.jar
 9. 保存结果图，使程序同时生成 mask 和参数/指标 JSON。
 10. 固定参数，用同一配置处理整组样本，不要逐图“美化”参数。
 
+已有二值掩膜时，勾选 `Use binary mask directly`，先关闭两项清理，使用 `Final mask` 检查输入前景是否保留；确有碎片或小孔洞时，再逐项启用清理，并通过 `Original` 与 `Skeleton overlay` 对照。不要为了消除假环而直接调大填洞范围，否则真实网孔也可能被填充。同组数据应固定模式及清理设置。
+
 如果不同实验组使用不同扫描分辨率、裁剪方式或颜色预处理，不能只根据最终数值直接比较；应先统一图像采集和分析条件。
 
 ## 5. 单张图像分析
 
 ### 5.1 打开图像
 
-1. 在主窗口设置分析参数，尤其是 `Resize Inputs`。
-2. 点击 `View`。
+1. 在主窗口选择普通或二值模式；普通模式还需确定 `Resize Inputs`。
+2. 点击 `Open image`。
 3. 选择一张支持的图像。
-4. 等待分析窗口出现。
+4. 等待主窗口右侧的新图像标签完成分析。
 
-程序会记住本次选择图像所在的文件夹；下次点击 `View` 时会从该文件夹打开。这个位置会保存在用户配置目录中，重启程序后仍然有效。
+程序会记住本次选择图像所在的文件夹；下次点击 `Open image` 时会从该文件夹打开。这个位置会保存在用户配置目录中，重启程序后仍然有效。
 
-`Resize Inputs` 在读取图像时应用。图像已经打开后再修改该参数，不会重新缩放当前窗口中的源图；需要关闭或保留当前窗口，然后重新点击 `View` 打开图像。
+普通模式的 `Resize Inputs` 在读取图像时应用，修改后会重载图像；切入二值模式会恢复原始分辨率，切回普通模式恢复原缩放设置。插件模式会重新获取 ImageJ 图像副本。
 
 ### 5.2 实时调整参数
 
 图像打开后，可以继续修改主窗口中的大多数参数：
 
-- 勾选框、单选按钮或颜色改变后会重新分析。
+- 分析参数改变后重新分析；仅改变叠加颜色、尺寸、可见性或底图模式时，只重绘已有结果。
 - 文本框通常在失去焦点或按 Enter 后触发更新。
 - 分析运行期间，分析窗口的保存和导航控件会暂时禁用。
 
@@ -187,9 +202,19 @@ java -jar .\AngioTool2.jar
 
 ### 5.3 查看结果
 
+| 视图 | 显示内容 |
+| --- | --- |
+| `Original` | 当前分析尺寸下的输入像素，普通模式中可能已缩放 |
+| `Final mask` | 清理后实际用于面积和骨架计算的黑白前景 |
+| `Skeleton overlay` | 按 Overlay 设置绘制的骨架、轮廓等叠加结果 |
+
+![二值清理与掩膜对照](screenshots/ui-2.1/binary-cleanup-mask.png)
+
+视图状态属于各自的图像标签，不会因切换标签丢失；仅在当前运行期间保留，不作为分析参数写入 JSON。`Save image` 始终保存叠加图，同时导出最终掩膜 PNG。
+
 - 鼠标滚轮或 `+`、`−` 按钮缩放。
 - 拖动画布或使用方向按钮平移。
-- `Display Stats` 控制画布左上角的统计面板。
+- `Measurements` 控制独立统计侧栏，适应窗口和 `1:1` 控制图像查看比例。
 
 画布显示的百分比和统计值是快速预览。正式分析应以保存的 XLSX 和 JSON 为准，并结合二值 mask 做质量检查。
 
@@ -226,18 +251,18 @@ sample-result overlay-data.json
 
 ### 6.1 开始前
 
-批处理会在点击 `Run` 时读取主窗口的当前分析参数，并把同一组参数应用到所有输入图像。建议先用 `View` 在代表性图像上验证 mask、骨架和指标，再运行批处理。
+批处理会在点击 `Run` 时读取主窗口的当前分析参数（包括输入模式及对应清理设置），并把同一组参数应用到所有输入图像。建议先用 `Open image` 在代表性图像上验证 mask、骨架和指标，再运行批处理。不要把灰度/彩色图混入直接二值模式的输入目录。
 
 ### 6.2 设置批处理
 
 1. 点击主窗口的 `Batch`。
 2. 点击 `Select input folders`，选择一个或多个文件夹。
-3. 点击 `Excel spreadsheet`，选择新建或已有的 XLSX 文件。
+3. 默认勾选 `Create spreadsheet in first input folder`：程序在第一个输入文件夹中自动创建工作簿，默认名为 `result_<输入文件夹末级名称>.xlsx`，可直接编辑文件名。取消勾选后，可点击 `Excel spreadsheet` 选择其他路径或已有 XLSX 文件。多输入文件夹仍汇总到第一输入文件夹中的同一工作簿。
 4. 选择结果图模式：
    - `No output`：只写 Excel，不保存结果图、mask 或 JSON。
-   - `Same folders as inputs`：结果文件写到各自输入图像旁边。
+   - `Create results folders next to inputs`：在各输入图像所在目录创建 `results` 子目录，并使用与单图分析相同的命名规则保存结果。
    - `Save result images to`：把所有结果写入指定输出根目录。
-5. 输入结果图格式。可靠选择为 `tif`、`tiff`、`png`、`jpg`、`jpeg`、`gif`、`bmp`、`ppm`。
+5. 选择 `Save result images to` 时输入结果图格式。可靠选择为 `tif`、`tiff`、`png`、`jpg`、`jpeg`、`gif`、`bmp`、`ppm`；使用 `results` 子目录时沿用原图扩展名，无扩展名源图默认输出为 PNG。
 6. 按需启用 `Override job count`。
 7. 点击 `Run`。
 
@@ -245,14 +270,14 @@ sample-result overlay-data.json
 
 程序会递归扫描每个所选文件夹及其子文件夹。需要注意：
 
-- 扫描器是宽松的；除 `.txt`、`.zip`、`.xls`、`.xlsx` 和无扩展名文件外，其他带扩展名文件都可能被尝试作为图像读取。
+- 扫描器是宽松的；除 `.txt`、`.zip`、`.xls` 和 `.xlsx` 外，其他文件（包括无扩展名文件）都可能被尝试作为图像读取。
 - 最好让输入目录只包含受支持的图像，避免把 PDF、JSON、数据库或其他非图像文件混在其中。
-- 文件名最后一个空格后的词如果是 `result`、`tubeness`、`thresholded`、`filtered`、`overlay`、`vessel-mask` 或 `overlay-data`，程序会跳过，防止重复分析标准输出文件。
+- 程序会跳过名为 `results` 的子目录；文件名最后一个空格后的词如果是 `result`、`tubeness`、`thresholded`、`filtered`、`overlay`、`vessel-mask` 或 `overlay-data`，也会跳过，防止重复分析标准输出文件。
 - 自定义命名的派生图如果没有这些后缀，仍可能被再次分析。
 
 ### 6.4 输出目录结构
 
-选择 `Same folders as inputs` 时，输出直接写在输入图像旁边。
+选择 `Create results folders next to inputs` 时，每张图像的输出写入其所在目录的 `results` 子目录，结果图命名为 `ana_原文件名`。无扩展名源图默认使用 `.png`。
 
 选择单独输出目录时，每个源目录会映射到输出根目录中的唯一子目录。若不同源目录同名，程序会附加父目录名或数字消除冲突。该布局用于避免重名，但不保证完整复制原始多层目录结构。
 
@@ -262,13 +287,15 @@ sample-result overlay-data.json
 sample.tif
 ```
 
-结果格式为 PNG，则批处理通常生成：
+使用 `results` 子目录模式时，批处理生成：
 
 ```text
-sample.tif result.png
-sample.tif vessel-mask.png
-sample.tif overlay-data.json
+results\ana_sample.tif
+results\ana_sample vessel-mask.png
+results\ana_sample overlay-data.json
 ```
+
+选择指定输出目录时仍使用原批处理命名，例如输出格式为 PNG 时生成 `sample.tif result.png`、`sample.tif vessel-mask.png` 和 `sample.tif overlay-data.json`。
 
 ### 6.5 并发任务数
 
@@ -297,10 +324,16 @@ sample.tif overlay-data.json
 | Thickness | 开启 |
 | Skeletonizer | Thorough (Lee94) |
 | Max Skeleton Steps | 开启，25 |
+| Prune terminal branches | 开启，3 px |
+| Merge nearby junctions | 开启，3 px |
 | Resize Inputs | 关闭，字段值 100% |
 | Measurement Scale | 关闭，字段值 100% |
+| Export normalized data | 关闭 |
 | Fill Holes | 关闭 |
 | Remove Particles | 关闭 |
+| Use binary mask directly | 关闭 |
+| 二值模式 Fill Holes | 关闭，半径 3 px |
+| 二值模式 Remove Particles | 关闭，半径 15 px |
 | Max Hole Level | 关闭，字段值 150% |
 | Min Boxness | 开启，9.375% |
 | Min Length : Area | 开启，`1 : 16` |
@@ -354,9 +387,13 @@ sample.tif overlay-data.json
 
 默认 25 是性能和完成度之间的折中。若红色骨架明显偏粗或偏离中心，可提高上限并复核。
 
-### 7.6 Resize Inputs
+### 7.6 邻近 junction 合并
 
-在分析前改变图像宽高：
+`Merge nearby junctions` 将由短骨架段直接连接的 junction 区域合并为一个统计点，默认阈值为 3 px。阈值按分析分辨率下的骨架路径长度计算，包含对角距离。空间位置接近但骨架不连通的 junction 不会合并；该功能不删除 mask 或骨架像素。建议用 0/关闭、2、3、5 px 对照，并确认真实的相邻分叉没有被过度合并。
+
+### 7.7 Resize Inputs
+
+仅普通模式可用；二值模式禁用，实际缩放因子固定为 1。普通模式在分析前改变图像宽高：
 
 - 50%：宽高各变为一半，总像素约为原来的 25%。
 - 200%：宽高各变为两倍，总像素约为原来的 4 倍。
@@ -365,7 +402,7 @@ sample.tif overlay-data.json
 
 程序不会因为 Resize Inputs 自动修正 Measurement Scale。如果原图标定为 `u` 单位/原始像素，缩放比例为 `r`，则分析图像每像素对应的标度通常应按 `u / r` 重新计算。例如原图 1 单位/像素、缩放到 50% 时，新图 1 像素约对应原图 2 单位。
 
-### 7.7 Measurement Scale
+### 7.8 Measurement Scale
 
 该百分比最终转换为线性乘数 `s`：
 
@@ -375,7 +412,15 @@ sample.tif overlay-data.json
 
 软件不在结果列中强制记录具体物理单位。100% 表示 `s = 1`，不是自动证明“1 像素 = 1 mm”。应根据显微镜、扫描仪或标尺自行标定，并在实验记录中写明单位。
 
-### 7.8 Fill Holes
+### 7.9 Export normalized data
+
+开启后会在保留原始输出的同时，额外生成图像相对指标。归一化基准是实际参与分析的图像：面积基准为 `width × height`，长度基准为 `sqrt(width × height)`。面积除以面积基准，长度、直径和骨架像素长度除以长度基准；junction、endpoint、segment 等拓扑计数保持原值。已有 junction density 乘以图像面积，使其成为无量纲结果。面积百分比、分形维数和 lacunarity 本身无量纲，保持原值。
+
+单图保存结果图时额外生成 `normalized-data.json`；批处理在原 XLSX 同一目录额外生成文件名带 `_nor` 的工作簿，例如 `results.xlsx` 对应 `results_nor.xlsx`。开关默认关闭；关闭时不会生成这些附加文件。
+
+该功能只归一化输出，不会自动缩放 Tubeness、形态学清理、骨架剪枝或 junction 合并参数，因此“无量纲”不代表不同分辨率的完整分析必然相同。裁剪、加边框、改变宽高比也会改变以整图为基准的结果。
+
+### 7.10 Fill Holes
 
 填充小型黑色背景连通区域。输入值在代码中作为类似半径的尺寸使用，实际面积阈值约为：
 
@@ -383,15 +428,15 @@ sample.tif overlay-data.json
 最大面积 ≈ π × 输入值²
 ```
 
-值越大，越大的孔洞会被填充。过大可能把真实无血管区域误认为血管。
+值越大，越大的孔洞会被填充。过大可能把真实无血管区域误认为血管。二值模式使用独立设置，默认关闭，只填不与图像边界连通的背景区域；该保护不能区分“错误孔洞”和真实血管环内部。
 
-### 7.9 Remove Particles
+### 7.11 Remove Particles
 
 移除小型白色前景连通区域，面积阈值同样约为 `π × 输入值²`。
 
-值越大，删除的孤立前景越多。它适合去除噪声，但也可能删除真实短小血管或断裂后的血管片段。
+值越大，删除的孤立前景越多。它适合去除噪声，但也可能删除真实短小血管或断裂后的血管片段。二值模式使用独立设置，默认关闭；与填洞同时开启时，先去颗粒，再重建连通域并填洞。
 
-### 7.10 Max Hole Level
+### 7.12 Max Hole Level
 
 使用原始图像亮度判断黑色空隙是否应被重新填成血管。当前代码在空隙平均亮度达到“已检测白色前景平均亮度 × 指定比例”时填充。
 
@@ -400,7 +445,7 @@ sample.tif overlay-data.json
 
 它依赖图像颜色和亮度方向。对暗血管图像，应先正确设置 `Transform Colors`，再调这个参数。
 
-### 7.11 Min Boxness
+### 7.13 Min Boxness
 
 程序根据空隙占据边界框的比例和边界框长宽比计算 boxness。接近紧凑正方形时值较高，细长或稀疏空隙值较低。
 
@@ -409,7 +454,7 @@ sample.tif overlay-data.json
 - 提高阈值：更多低 boxness 空隙会被填充。
 - 降低阈值：只填充更细长或更稀疏的空隙。
 
-### 7.12 Min Length : Area
+### 7.14 Min Length : Area
 
 代码用连通空隙面积除以其最大跨度，得到近似面积/长度指标。当这个值低于设定阈值时填充空隙。
 
@@ -418,7 +463,7 @@ sample.tif overlay-data.json
 - 提高阈值：会填充更多细长区域。
 - 降低阈值：更加保守。
 
-### 7.13 Transform Colors
+### 7.15 Transform Colors
 
 关闭时，程序计算整张图像平均最亮的 RGB 通道，并只用该通道进入 Tubeness。
 
@@ -440,7 +485,7 @@ sample.tif overlay-data.json
 
 默认颜色为 Target 红色 `FF0000`、Off 橙色 `FF9900`，饱和度 100%，Hue : Brightness 为 1 : 1，亮度图为 `(0,0), (100,100)`。
 
-### 7.14 Vessel Diameters list
+### 7.16 Vessel Diameters list
 
 这个名称容易误解。它是 Tubeness 多尺度 Gaussian/Hessian 增强使用的 `sigma`/尺度列表，不是程序测得的血管直径。
 
@@ -451,7 +496,7 @@ sample.tif overlay-data.json
 
 当目标包含粗细不同的血管时，可加入多个代表性尺度；不要仅因为结果“更满”就无限增加尺度。
 
-### 7.15 Vessel Intensity range
+### 7.17 Vessel Intensity range
 
 Tubeness 输出会归一化到 0–255，然后按此范围二值化：
 
@@ -565,6 +610,10 @@ JSON 不包含逐像素 mask；需要区域数据时应同时读取配套 PNG。
 
 XLSX 由项目自研写入器生成，不支持所有复杂 Excel 特性。向已有工作簿追加前，建议先关闭 Excel，并对重要文件做独立备份。
 
+当前写入器固定使用 UTF-8 生成 XML，跳过 `NaN/Infinity` 非有限数值，并令工作表维度与实际行数一致，以避免 Excel 打开时提示修复。若仍出现修复提示，请保留 Excel 生成的修复日志和原始 XLSX 以便定位具体部件。
+
+开启 `Export normalized data` 时，单图结果图旁会增加 `normalized-data.json`；批处理工作簿旁会增加 `_nor.xlsx`。附加文件只保存归一化指标和必要元数据，原始 JSON/XLSX 不被替换。
+
 ### 10.5 选择哪个文件
 
 | 需求 | 首选文件 |
@@ -612,7 +661,7 @@ XLSX 由项目自研写入器生成，不支持所有复杂 Excel 特性。向�
 | 独立小点过多 | 启用 Remove Particles；提高最小强度 |
 | 不同颜色区域识别不一致 | 启用 Transform Colors，调整 Target/Off 和 Hue : Brightness |
 | 骨架偏粗或断裂 | 提高 Max Skeleton Steps；尝试 Thorough (Lee94) |
-| junction 过多 | 先减少 mask 噪声和粘连，再检查骨架算法 |
+| junction 过多 | 先减少 mask 噪声和粘连，再检查骨架算法；对由极短骨架段连接的节点，可启用 Merge nearby junctions |
 | 处理过慢 | 缩小输入、减少尺度、使用 Fast、限制骨架步数、关闭可选统计 |
 
 ## 12. 实验复现与质量控制
@@ -684,7 +733,6 @@ JSON 的 `uiParameters` 是最完整的参数快照；仅保存截图不足以�
 ### 13.3 Batch 显示 `No images were found`
 
 - 确认至少选择了一个真实存在的文件夹。
-- 检查文件是否有扩展名。
 - 检查访问权限。
 - 确认文件名没有被识别为标准输出后缀。
 - 先用 `View` 验证其中一张图能否读取。
@@ -849,3 +897,87 @@ java -jar .\AngioTool2.jar
 ---
 
 使用 AngioTool 得到可信结果的核心原则是：先验证二值 mask，再验证骨架和 junction，最后解释统计值；同一研究中始终固定图像采集、缩放、分割、骨架和标定参数。
+# AngioTool 2.1 使用与结果解释说明
+
+更新时间：2026-09-07
+
+## 版本状态
+
+本目录是 AngioTool 2.1 的独立修复版本。原版目录 `D:\CodeProject\AngioTool` 保持不变。
+
+2.1 当前优先修复了空结果、异常尺寸、指标命名和结果追踪问题。图像分析方法本身仍继承原有 Java 实现，因此正式实验前仍应检查二值 mask、骨架和 junction 是否符合肉眼观察。
+
+## 结果有效性
+
+JSON 的 `metrics.valid` 表示程序是否检测到非空且具有正凸包面积的分析结果。
+
+当 `metrics.valid=false` 时，应根据 `metrics.invalidReason` 排除该样本，不要把输出的 0 当成真实生物学零值。
+
+常见原因：
+
+- `empty-segmentation`：没有检测到前景；
+- `degenerate-mask-area`：存在前景，但凸包面积无效。
+
+## 面积解释
+
+当前 `Explant Area` 和 `convexHullArea` 使用血管 mask 的凸包面积，而不是独立组织 ROI。JSON 中会记录：
+
+```text
+areaDenominator = vessel-mask-convex-hull
+```
+
+因此 `Vessels Percentage Area` 应理解为凸包内血管面积比例。若研究需要组织内血管比例，应提供独立组织区域或后续增加 ROI 支持。
+
+## 长度解释
+
+- `Average Vessels Length`：每棵连通树的平均总长度；
+- `Average Segment Length`：每个骨架分支段的平均长度。
+
+两者不能混用。实验报告若讨论“平均分支长度”，应优先使用 `Average Segment Length`。
+
+## 直径解释
+
+`Average Vessel Diameter` 是骨架 slab 点局部 mask 直径的中位数，不是严格的横截面平均直径。`Vessel Diameters list` 则是 Tubeness 检测尺度，两者不是同一个参数。
+
+## 当前固定预处理
+
+在阈值后，程序继续执行固定的 3x3 形态学闭运算两次。该步骤可能填补小间隙并连接相邻前景，因此必须在 overlay 中检查最终 mask。
+
+JSON 中记录：
+
+```text
+morphology = 3x3-closing-twice
+```
+
+## 骨架质量
+
+JSON 会记录：
+
+- `skeletonPixelCount`
+- `isolatedSkeletonPixelCount`
+
+孤立骨架点、异常短分支、明显偏离血管中心的骨架都应视为需要复核的信号。当前版本记录这些问题，但不会自动删除所有异常结构。
+
+## 推荐工作流程
+
+1. 固定原始图像分辨率。
+2. 调整颜色预处理和 Tubeness 尺度。
+3. 检查最终 vessel mask。
+4. 检查骨架是否位于血管中心。
+5. 检查 junction 是否与真实分叉一致。
+6. 排除 `metrics.valid=false` 的样本。
+7. 固定 Skeletonizer、最大迭代步数和测量尺度。
+8. 在同一实验中使用一致的参数和图像采集条件。
+
+## 回归测试
+
+```powershell
+javac -cp build -d build benchmarks\AngioTool\AnalysisRegressionTest.java
+java -cp build benchmarks.AngioTool.AnalysisRegressionTest
+```
+
+通过标志：
+
+```text
+AnalysisRegressionTest: PASS
+```

@@ -6,6 +6,11 @@ import Utils.Misc;
 import Utils.RefVector;
 
 public class AnalyzerParameters {
+    public boolean shouldUseBinaryMask;
+    public boolean binaryRemoveSmallParticles;
+    public double binarySmallParticleRadius = 15.0;
+    public boolean binaryFillHoles;
+    public double binaryHoleRadius = 3.0;
     public boolean shouldResizeImage;
     public double resizingFactor;
     public boolean shouldRemapColors;
@@ -31,8 +36,13 @@ public class AnalyzerParameters {
     public boolean shouldUseFastSkeletonizer;
     public boolean shouldCapSkelIterations;
     public int maxSkelIterations;
+    public boolean shouldPruneSkeleton = true;
+    public double maxTerminalBranchLength = 3.0;
+    public boolean shouldMergeNearbyJunctions = true;
+    public double maxJunctionMergeDistance = 3.0;
     public boolean shouldApplyLinearScale;
     public double linearScalingFactor;
+    public boolean shouldNormalizeOutputData;
     public boolean shouldDrawOutline;
     public Rgb outlineColor;
     public double outlineSize;
@@ -157,7 +167,7 @@ public class AnalyzerParameters {
         p.shouldDrawSkeleton = true;
         p.shouldDrawBranchPoints = true;
         p.shouldDrawConvexHull = true;
-        p.shouldCapSkelIterations = true;
+        p.shouldCapSkelIterations = false;
         p.maxSkelIterations = 25;
         p.shouldFillBrightShapes = false;
         p.brightShapeThresholdFactor = 1.5;
@@ -180,6 +190,7 @@ public class AnalyzerParameters {
         p.shouldComputeLacunarity = true;
         p.shouldComputeThickness = true;
         p.linearScalingFactor = 1.0;
+        p.shouldNormalizeOutputData = false;
         p.sigmas = new double[] {12.0};
         p.thresholdLow = 15;
         p.thresholdHigh = 255;
@@ -194,6 +205,11 @@ public class AnalyzerParameters {
 
         AnalyzerParameters other = (AnalyzerParameters)obj;
         return
+            other.shouldUseBinaryMask == shouldUseBinaryMask &&
+            other.binaryRemoveSmallParticles == binaryRemoveSmallParticles &&
+            other.binarySmallParticleRadius == binarySmallParticleRadius &&
+            other.binaryFillHoles == binaryFillHoles &&
+            other.binaryHoleRadius == binaryHoleRadius &&
             other.shouldResizeImage == shouldResizeImage &&
             other.resizingFactor == resizingFactor &&
             other.shouldRemapColors == shouldRemapColors &&
@@ -219,8 +235,13 @@ public class AnalyzerParameters {
             other.shouldUseFastSkeletonizer == shouldUseFastSkeletonizer &&
             other.shouldCapSkelIterations == shouldCapSkelIterations &&
             other.maxSkelIterations == maxSkelIterations &&
+            other.shouldPruneSkeleton == shouldPruneSkeleton &&
+            other.maxTerminalBranchLength == maxTerminalBranchLength &&
+            other.shouldMergeNearbyJunctions == shouldMergeNearbyJunctions &&
+            other.maxJunctionMergeDistance == maxJunctionMergeDistance &&
             other.shouldApplyLinearScale == shouldApplyLinearScale &&
             other.linearScalingFactor == linearScalingFactor &&
+            other.shouldNormalizeOutputData == shouldNormalizeOutputData &&
             other.shouldDrawOutline == shouldDrawOutline &&
             other.outlineColor.value == outlineColor.value &&
             other.outlineSize == outlineSize &&
@@ -240,10 +261,51 @@ public class AnalyzerParameters {
         ;
     }
 
-    public RefVector<String> validate()
+    public boolean hasSameAnalysisSettings(AnalyzerParameters other)
     {
-        RefVector<String> errors = new RefVector<>(String.class);
+        return other != null &&
+            shouldUseBinaryMask == other.shouldUseBinaryMask &&
+            (!shouldUseBinaryMask ||
+                (binaryRemoveSmallParticles == other.binaryRemoveSmallParticles &&
+                binarySmallParticleRadius == other.binarySmallParticleRadius &&
+                binaryFillHoles == other.binaryFillHoles &&
+                binaryHoleRadius == other.binaryHoleRadius)) &&
+            shouldResizeImage == other.shouldResizeImage &&
+            resizingFactor == other.resizingFactor &&
+            shouldRemapColors == other.shouldRemapColors &&
+            hueTransformWeight == other.hueTransformWeight &&
+            brightnessTransformWeight == other.brightnessTransformWeight &&
+            targetRemapColor.value == other.targetRemapColor.value &&
+            voidRemapColor.value == other.voidRemapColor.value &&
+            saturationFactor == other.saturationFactor &&
+            Misc.isIntArrayIdentical(brightnessLineSegments, other.brightnessLineSegments) &&
+            shouldFillBrightShapes == other.shouldFillBrightShapes &&
+            brightShapeThresholdFactor == other.brightShapeThresholdFactor &&
+            shouldApplyMinBoxness == other.shouldApplyMinBoxness &&
+            minBoxness == other.minBoxness &&
+            shouldApplyMinAreaLength == other.shouldApplyMinAreaLength &&
+            minAreaLengthRatio == other.minAreaLengthRatio &&
+            shouldRemoveSmallParticles == other.shouldRemoveSmallParticles &&
+            removeSmallParticlesThreshold == other.removeSmallParticlesThreshold &&
+            shouldFillHoles == other.shouldFillHoles &&
+            fillHolesValue == other.fillHolesValue &&
+            Misc.isDoubleArraySimilar(sigmas, other.sigmas) &&
+            thresholdHigh == other.thresholdHigh && thresholdLow == other.thresholdLow &&
+            shouldUseFastSkeletonizer == other.shouldUseFastSkeletonizer &&
+            shouldCapSkelIterations == other.shouldCapSkelIterations &&
+            maxSkelIterations == other.maxSkelIterations &&
+            shouldPruneSkeleton == other.shouldPruneSkeleton &&
+            maxTerminalBranchLength == other.maxTerminalBranchLength &&
+            shouldMergeNearbyJunctions == other.shouldMergeNearbyJunctions &&
+            maxJunctionMergeDistance == other.maxJunctionMergeDistance &&
+            shouldApplyLinearScale == other.shouldApplyLinearScale &&
+            linearScalingFactor == other.linearScalingFactor &&
+            shouldComputeLacunarity == other.shouldComputeLacunarity &&
+            shouldComputeThickness == other.shouldComputeThickness;
+    }
 
+    private void validateDetectionParameters(RefVector<String> errors)
+    {
         if (shouldResizeImage && resizingFactor <= 0.0)
             errors.add("Image resize factor must be >0% (not " + (resizingFactor * 100.0) + "%)");
         if (shouldRemapColors && hueTransformWeight <= 0.0 && brightnessTransformWeight <= 0.0)
@@ -252,8 +314,14 @@ public class AnalyzerParameters {
             errors.add("Target color must not be on the gray scale, ie. it must have a hue (not " + targetRemapColor.toString() + ")");
         if (shouldRemapColors && Misc.isGrayscale(voidRemapColor.getRGB()))
             errors.add("Off color must not be on the gray scale, ie. it must have a hue (not " + targetRemapColor.toString() + ")");
-        if (shouldRemapColors && Misc.getHue(targetRemapColor.getRGB()) == Misc.getHue(voidRemapColor.getRGB()))
-            errors.add("Target and off colors must have a different hue");
+        if (shouldRemapColors) {
+            float targetHue = Misc.getHue(targetRemapColor.getRGB());
+            float offHue = Misc.getHue(voidRemapColor.getRGB());
+            float hueDistance = Math.abs(targetHue - offHue);
+            hueDistance = Math.min(hueDistance, 6.0f - hueDistance);
+            if (hueDistance < 0.05f)
+                errors.add("Target and off colors must have sufficiently different hues");
+        }
         if (shouldRemapColors && (saturationFactor < 0.0 || saturationFactor > 1.0))
             errors.add("Saturation factor must be between 0% and 100% inclusive (not " + (saturationFactor * 100.0) + "%)");
         if (shouldRemapColors && !PreprocessColor.computeBrightnessTable(null, brightnessLineSegments, brightnessLineSegments.length / 2))
@@ -272,6 +340,26 @@ public class AnalyzerParameters {
             errors.add("Maximum vessel intensity must be within [0-255] (not " + thresholdHigh + ")");
         if (thresholdLow > thresholdHigh)
             errors.add("Minimum vessel intensity must be <= to the maximum (not " + thresholdLow + "-" + thresholdHigh + ")");
+    }
+
+    public RefVector<String> validate()
+    {
+        RefVector<String> errors = new RefVector<>(String.class);
+        if (!shouldUseBinaryMask)
+            validateDetectionParameters(errors);
+        if (shouldCapSkelIterations && maxSkelIterations <= 0)
+            errors.add("Max skeleton steps must be positive when enabled.");
+        if (shouldPruneSkeleton && (!Double.isFinite(maxTerminalBranchLength) || maxTerminalBranchLength < 0))
+            errors.add("Terminal branch length must be finite and nonnegative.");
+        if (shouldMergeNearbyJunctions &&
+                (!Double.isFinite(maxJunctionMergeDistance) || maxJunctionMergeDistance < 0))
+            errors.add("Junction merge distance must be finite and nonnegative.");
+        if (shouldUseBinaryMask && binaryRemoveSmallParticles &&
+                (!Double.isFinite(binarySmallParticleRadius) || binarySmallParticleRadius <= 0))
+            errors.add("Binary remove particles radius must be finite and >0.");
+        if (shouldUseBinaryMask && binaryFillHoles &&
+                (!Double.isFinite(binaryHoleRadius) || binaryHoleRadius <= 0))
+            errors.add("Binary fill holes radius must be finite and >0.");
         if (shouldApplyLinearScale && linearScalingFactor <= 0.0)
             errors.add("Measurement scale factor must be >0% (not " + (linearScalingFactor * 100.0) + "%)");
         if (shouldDrawOutline && outlineColor == null)
@@ -292,5 +380,15 @@ public class AnalyzerParameters {
             errors.add("Boundary size must be >0 (not " + convexHullSize + ")");
 
         return errors;
+    }
+
+    public double effectiveResizeFactor()
+    {
+        return !shouldUseBinaryMask && shouldResizeImage ? resizingFactor : 1.0;
+    }
+
+    public String inputMode()
+    {
+        return shouldUseBinaryMask ? "Binary mask" : "Tubeness";
     }
 }

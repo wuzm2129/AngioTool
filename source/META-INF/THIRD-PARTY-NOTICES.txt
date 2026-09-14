@@ -1,0 +1,10 @@
+FlatLaf 3.6.1
+Copyright (c) FormDev Software GmbH. All rights reserved.
+License: Apache License, Version 2.0
+Full license: META-INF/licenses/flatlaf-LICENSE.txt
+Project: https://www.formdev.com/flatlaf/
+Artifact: https://repo.maven.apache.org/maven2/com/formdev/flatlaf/3.6.1/flatlaf-3.6.1.jar
+SHA-256: 687be33e1e3eface1681fd194732d16e008126a47b6116b4301e7070c918c4c9
+
+The pinned library is included in source/lib and merged into the application
+JAR by compile.py. No runtime download is required.

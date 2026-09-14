@@ -1,6 +1,14 @@
 # AngioTool 叠加绘图导出文件说明
 
-本文档说明 AngioTool 在保存结果图时额外导出的两个配套文件：`vessel-mask.png` 和 `overlay-data.json`。这两个文件用于后续通过 Python、MATLAB、JavaScript 或其他编程工具读取、复核和二次分析血管检测结果。
+> **2026-09-12 新增字段**：JSON 在 `metrics.fractalBoxCount` 中增加最终血管掩膜的盒计数结果，包含维数、R²、独立有效性和实际尺度/计数；不替换既有统计字段。不可计算的浮点值写为 JSON `null`。完整算法与字段说明见 [盒计数分形维数](FRACTAL_BOX_COUNT_CN.md)。
+
+核对日期：2026-09-07。适用于当前本地 2.1 的普通/直接二值模式、独立清理设置和三视图界面。
+
+本文档说明 AngioTool 在保存结果图时额外导出的配套文件：`vessel-mask.png`、`overlay-data.json`，以及启用 `Export normalized data` 时生成的 `normalized-data.json`。这些文件用于后续通过 Python、MATLAB、JavaScript 或其他编程工具读取、复核和二次分析血管检测结果。
+
+`normalized-data.json` 使用 `image-relative-v1` 规则：面积除以分析图像面积，长度和直径除以图像面积平方根，拓扑计数保持不变，现有 junction density 乘以分析图像面积。文件记录分析宽高、面积/长度基准、Resize Inputs 因子和 Measurement Scale。凸包面积为零时，依赖凸包的结果写为 `null`。该文件不替换 `overlay-data.json`，也不包含归一化后的点坐标。
+
+批处理不为每张图单独写归一化 JSON，而是在原工作簿同一目录生成 `<原文件名>_nor.xlsx`；原始工作簿保持原字段和数值。
 
 这两个文件应作为同一次分析结果的一组数据共同使用。`vessel-mask.png` 保存逐像素的血管区域，`overlay-data.json` 保存绘图参数和结构化点集数据。
 
@@ -21,12 +29,12 @@ sample-result vessel-mask.png
 sample-result overlay-data.json
 ```
 
-批处理时文件名前缀会跟随批处理输出命名。例如输入文件为 `a.png` 时，可能生成：
+批处理时文件名前缀会跟随输出设置。例如采用输入目录下 `results` 输出方式时，输入 `a.png` 生成：
 
 ```text
-a.png result.png
-a.png vessel-mask.png
-a.png overlay-data.json
+results/ana_a.png
+results/ana_a vessel-mask.png
+results/ana_a overlay-data.json
 ```
 
 ## 2. `vessel-mask.png`
@@ -38,7 +46,9 @@ a.png overlay-data.json
 - 白色像素：该像素被识别为血管。
 - 黑色像素：该像素被识别为背景或非血管区域。
 
-当前实现中，mask 不是概率图，也不是灰度强度图。它只有二值语义：血管或非血管。
+当前实现中，mask 不是概率图，也不是灰度强度图。它只有二值语义：血管或非血管。普通模式导出增强和清理后的 mask；直接二值模式导出输入前景经过可选去颗粒/填洞后的 mask，两项均关闭时保留输入前景。
+
+界面的 `Original` / `Final mask` / `Skeleton overlay` 只控制预览。无论选中哪种视图，保存仍生成叠加结果图和最终掩膜；JSON 不保存各标签的临时查看模式。
 
 ### 2.1 像素值含义
 
@@ -155,6 +165,11 @@ a.png overlay-data.json
 
 ```json
 "analysis": {
+  "useBinaryMask": false,
+  "binaryRemoveSmallParticles": false,
+  "binarySmallParticleRadius": 15.0,
+  "binaryFillHoles": false,
+  "binaryHoleRadius": 3.0,
   "computeLacunarity": true,
   "computeThickness": true,
   "skeletonizer": "Fast (Zha84)",
@@ -189,6 +204,8 @@ a.png overlay-data.json
 | `skeletonizer` | string | 骨架化算法，当前为 `Fast (Zha84)` 或 `Thorough (Lee94)`。 |
 | `capSkeletonSteps` | boolean | 是否限制骨架化最大迭代步数。 |
 | `maxSkeletonSteps` | number | 最大骨架化迭代步数。 |
+| `mergeNearbyJunctions` | boolean | 是否合并由短骨架段直接连接的 junction 区域。 |
+| `maxJunctionMergeDistancePx` | number | junction 合并的最大骨架路径长度，单位为分析像素。 |
 | `resizeInputs` | boolean | 是否缩放输入图像。 |
 | `resizeInputsPercent` | number | 输入图像缩放百分比。 |
 | `applyMeasurementScale` | boolean | 是否启用测量尺度换算。 |
@@ -206,6 +223,8 @@ a.png overlay-data.json
 | `vesselDiameters` | number[] | Vessel Diameters list 输入的数值数组。 |
 | `minVesselIntensity` | number | Vessel Intensity range 的最小值。 |
 | `maxVesselIntensity` | number | Vessel Intensity range 的最大值。 |
+
+二值模式新增字段及有效性见下方第 6.1 节；普通模式的 `fillHoles`、`removeParticles`、`resizeInputs` 等仍保留原设置，在二值模式下不能据其值推断实际执行了相应操作。
 
 ### 5.2 `uiParameters.colorPreprocessing`
 
@@ -316,6 +335,8 @@ a.png overlay-data.json
 | `minAreaLengthRatio` | `Min Area Length Ratio` | 最小面积/长度比参数。 |
 | `skeletonizer` | `Skeletonizer` | 骨架化算法，当前为 `Fast` 或 `Thorough`。 |
 | `maxSkeletonSteps` | `Max Skeleton Steps` | 最大骨架化迭代步数。 |
+| `mergeNearbyJunctions` | `Merge Nearby Junctions` | 是否启用相连邻近 junction 合并。 |
+| `maxJunctionMergeDistancePx` | `Max Junction Merge Distance (px)` | 允许合并的直接连接骨架段最大长度。 |
 | `scalingFactor` | `Scaling Factor` | 线性尺度换算因子。 |
 | `transformedColors` | `Transformed Colors` | 是否启用颜色变换。 |
 | `hueTransformWeight` | `Hue Transform Weight` | 色相变换权重。 |
@@ -324,6 +345,40 @@ a.png overlay-data.json
 | `offColor` | `Off Color` | 背景/排除颜色。 |
 | `saturationFactor` | `Saturation Factor` | 饱和度因子。 |
 | `brightnessGraph` | `Brightness Graph` | 亮度映射曲线点。 |
+
+### 6.1 输入模式与二值清理字段
+
+以下字段位于 `analysisParameters`；其中 `useBinaryMask` 和四个 `binary*` 字段也出现在 `uiParameters.analysis`：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `inputMode` | string | `"Tubeness"` 或 `"Binary mask"` |
+| `useBinaryMask` | boolean | 是否直接使用二值掩膜 |
+| `effectiveResizeFactor` | number | 实际输入缩放因子；二值模式固定为 1 |
+| `binaryRemoveSmallParticles` | boolean | 二值模式是否去小颗粒，默认 false |
+| `binarySmallParticleRadius` | number | 小颗粒等效半径，单位 px，默认 15 |
+| `binaryFillHoles` | boolean | 二值模式是否填充封闭孔洞，默认 false |
+| `binaryHoleRadius` | number | 孔洞等效半径，单位 px，默认 3 |
+
+面积上限约为 `πr²`。两项清理同时启用时先去颗粒，再重新标记连通域并填洞；填洞不修改与图像边界连通的背景。
+
+读取时先判断模式，再选择对应参数组。二值模式下旧增强参数和普通清理值仅是保留的设置；普通模式下 `binary*` 值不参与计算。不要把灰显控件中保留的数字当成本次实际使用的参数。
+
+这些是追加字段；历史 JSON 可能缺失。缺少模式字段时，应标注为旧版/模式未记录，而不是仅凭文件名判定输入模式。旧字段的名称和点集坐标语义保持不变。
+
+### 6.2 XLSX 对应记录
+
+单图结果表在已有列末尾追加下列列；批处理在 Settings 中记录相同项目：
+
+| XLSX 列名 | 参数来源 |
+| --- | --- |
+| `Input Mode` | `inputMode` |
+| `Binary Remove Particles` | `binaryRemoveSmallParticles` |
+| `Binary Particle Radius` | `binarySmallParticleRadius` |
+| `Binary Fill Holes` | `binaryFillHoles` |
+| `Binary Hole Radius` | `binaryHoleRadius` |
+
+外部脚本应按表头定位列，不要假定新增字段存在于历史工作簿，也不要仅依赖固定总列数。
 
 ## 7. `overlayParameters`
 
@@ -421,6 +476,7 @@ a.png overlay-data.json
 | `treeCount` | number | 骨架连通树数量。 |
 | `segmentCount` | number | 血管分支段数量，对应 `vesselSegments` 的元素数量。 |
 | `junctionCount` | number | 分支点数量。 |
+| `mergedJunctionRegionCount` | number | 被吸收到其他 junction 组中的原始 junction 区域数。 |
 | `junctionDensity` | number | 分支点密度，对应 XLSX 的 `Junctions Density`。 |
 | `endPointCount` | number | 端点数量。 |
 | `totalLengthPixels` | number | 总血管长度，单位为像素。 |

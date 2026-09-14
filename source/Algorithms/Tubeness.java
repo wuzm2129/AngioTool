@@ -21,6 +21,9 @@ public class Tubeness
     ) throws ExecutionException
     {
         final int area = width * height;
+        if (width <= 0 || height <= 0 || area <= 0)
+            return;
+
         float[] gaussianOutput = FloatBufferPool.acquireAsIs(area);
         float[] maxEigenOutput = FloatBufferPool.acquireZeroed(area);
 
@@ -28,6 +31,9 @@ public class Tubeness
         double maxResult = 0.0;
 
         for (int s = 0; s < nSigmas; s++) {
+            if (Double.isNaN(sigma[s]) || Double.isInfinite(sigma[s]) || sigma[s] < 0.0)
+                continue;
+
             computeGaussianFastMirror(
                 gaussianOutput,
                 image,
@@ -92,6 +98,11 @@ public class Tubeness
         int height,
         double sigma
     ) {
+        if (width == 1 || height == 1) {
+            System.arraycopy(image, 0, output, 0, width * height);
+            return;
+        }
+
         int kernelSize = determineGaussianKernelSize(sigma);
         float[] kernel = FloatBufferPool.acquireAsIs(kernelSize);
         populateGaussianKernel1D(kernel, sigma);

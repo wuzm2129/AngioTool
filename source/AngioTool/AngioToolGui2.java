@@ -17,6 +17,16 @@ import java.io.InputStream;
 import java.util.LinkedList;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import java.awt.BorderLayout;
+import java.awt.Font;
+import java.awt.GridLayout;
+import java.awt.CardLayout;
+import java.awt.Color;
+import java.awt.GridBagLayout;
+import com.formdev.flatlaf.icons.FlatFileViewDirectoryIcon;
+import com.formdev.flatlaf.icons.FlatFileChooserDetailsViewIcon;
+import com.formdev.flatlaf.icons.FlatHelpButtonIcon;
+import com.formdev.flatlaf.icons.FlatTabbedPaneCloseIcon;
 
 public class AngioToolGui2 extends JFrame implements ColorElement.Listener, ActionListener, FocusListener, KeyListener
 {
@@ -29,15 +39,22 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
     final JLabel labelAnalysis = new JLabel();
     final JCheckBox cbComputeLacunarity = new JCheckBox();
     final JCheckBox cbComputeThickness = new JCheckBox();
+    final JCheckBox cbNormalizeOutputData = new JCheckBox();
+    final JCheckBox cbUseBinaryMask = new JCheckBox("Use binary mask directly");
     final JLabel labelSkeletonizer = new JLabel();
     final ButtonGroup groupSkeletonizer = new ButtonGroup();
     final JRadioButton rbSkelFast = new JRadioButton();
     final JRadioButton rbSkelThorough = new JRadioButton();
     final NumberEntry elemMaxSkelIterations;
+    final NumberEntry elemPruneSkeleton;
+    final NumberEntry elemMergeJunctions;
     final NumberEntry elemResizeInputs;
     final NumberEntry elemLinearScaleFactor;
     final NumberEntry elemRemoveParticles;
     final NumberEntry elemFillHoles;
+    final NumberEntry elemBinaryFillHoles;
+    final NumberEntry elemBinaryRemoveParticles;
+    final JPanel cleanupInputs = new JPanel(new CardLayout());
     final NumberEntry elemMaxHoleLevelPercent;
     final NumberEntry elemMinBoxnessPercent;
     final NumberEntry elemMinAreaLengthRatio;
@@ -80,6 +97,13 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
     public final LinkedList<ImagingWindow> imagingWindows = new LinkedList<>();
     byte[] helpHtmlData;
+    final JLabel labelStatus = new JLabel("Ready");
+    final JTabbedPane parameterTabs = new JTabbedPane();
+    final JTabbedPane imageTabs = new JTabbedPane();
+    final CardLayout imageCards = new CardLayout();
+    final JPanel imageArea = new JPanel(imageCards);
+    final JSplitPane mainWorkspace = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+    boolean updatingUi;
 
     public AngioToolGui2(Object source, AnalyzerParameters analyzerParams, String defaultPath)
     {
@@ -120,11 +144,24 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         cbComputeThickness.setText("Thickness");
         cbComputeThickness.setSelected(analyzerParams.shouldComputeThickness);
 
+        cbNormalizeOutputData.setText("Export normalized data");
+        cbNormalizeOutputData.setSelected(analyzerParams.shouldNormalizeOutputData);
+        cbNormalizeOutputData.setToolTipText("Also export image-relative metrics using image area and its square root as normalization bases.");
+
         elemMaxSkelIterations = new NumberEntry("Max Skeleton Steps:", analyzerParams.shouldCapSkelIterations, analyzerParams.maxSkelIterations, "");
+        elemPruneSkeleton = new NumberEntry("Prune terminal branches:", analyzerParams.shouldPruneSkeleton, analyzerParams.maxTerminalBranchLength, "px");
+        elemPruneSkeleton.cb.setToolTipText("Remove endpoint-to-junction branches at or below this path length; preserve border endpoints and loops.");
+        elemMergeJunctions = new NumberEntry("Merge nearby junctions:", analyzerParams.shouldMergeNearbyJunctions, analyzerParams.maxJunctionMergeDistance, "px");
+        elemMergeJunctions.cb.setToolTipText("Merge junction regions only when directly connected by a skeleton segment at or below this path length.");
+        elemMaxSkelIterations.cb.setToolTipText("Uncheck to thin until convergence. Pruning is skipped if the step limit is reached without convergence.");
         elemResizeInputs = new NumberEntry("Resize Inputs to:", analyzerParams.shouldResizeImage, 100.0 * analyzerParams.resizingFactor, "%");
         elemLinearScaleFactor = new NumberEntry("Measurement Scale:", analyzerParams.shouldApplyLinearScale, 100.0 * analyzerParams.linearScalingFactor, "%");
         elemRemoveParticles = new NumberEntry("Remove Particles:", analyzerParams.shouldRemoveSmallParticles, analyzerParams.removeSmallParticlesThreshold, "px");
         elemFillHoles = new NumberEntry("Fill Holes:", analyzerParams.shouldFillHoles, analyzerParams.fillHolesValue, "px");
+        elemBinaryFillHoles = new NumberEntry("Fill Holes:", analyzerParams.binaryFillHoles, analyzerParams.binaryHoleRadius, "px");
+        elemBinaryRemoveParticles = new NumberEntry("Remove Particles:", analyzerParams.binaryRemoveSmallParticles, analyzerParams.binarySmallParticleRadius, "px");
+        elemBinaryFillHoles.spinner.setToolTipText("Enclosed holes only; maximum area = pi x radius squared");
+        elemBinaryRemoveParticles.spinner.setToolTipText("Maximum connected foreground area = pi x radius squared");
         elemMaxHoleLevelPercent = new NumberEntry("Max Hole Level:", analyzerParams.shouldFillBrightShapes, 100.0 * analyzerParams.brightShapeThresholdFactor, "%");
         elemMinBoxnessPercent = new NumberEntry("Min Boxness:", analyzerParams.shouldApplyMinBoxness, 100.0 * analyzerParams.minBoxness, "%");
         elemMinAreaLengthRatio = new NumberEntry("Min Length : Area:", analyzerParams.shouldApplyMinAreaLength, analyzerParams.minAreaLengthRatio, "1 :");
@@ -197,38 +234,11 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
         updateMemoryMonitor();
 
-        JPanel dialogPanel = new JPanel();
-        GroupLayout layout = new GroupLayout(dialogPanel);
-        dialogPanel.setLayout(layout);
-        dialogPanel.setBorder(new EmptyBorder(0, 2, 4, 2));
-        layout.setAutoCreateGaps(true);
-        layout.setAutoCreateContainerGaps(true);
-
-        arrangeUi(layout);
-
-        int nComponents = dialogPanel.getComponentCount();
-        for (int i = 0; i < nComponents; i++) {
-            Component elem = dialogPanel.getComponent(i);
-            if (elem instanceof AbstractButton)
-                ((AbstractButton)elem).addActionListener(this);
-            else
-                elem.addFocusListener(this);
-
-            if (elem instanceof JTextField)
-                elem.addKeyListener(this);
-        }
-
-        dialogPanel.addMouseListener(new MouseListener() {
-            @Override
-            public void mousePressed(MouseEvent evt) {
-                maybeUpdateImagingWindows();
-            }
-
-            @Override public void mouseClicked(MouseEvent evt) {}
-            @Override public void mouseEntered(MouseEvent evt) {}
-            @Override public void mouseExited(MouseEvent evt) {}
-            @Override public void mouseReleased(MouseEvent evt) {}
-        });
+        cbUseBinaryMask.setSelected(analyzerParams.shouldUseBinaryMask);
+        cbUseBinaryMask.setToolTipText("White foreground, black background (0/255 or 0/1); optional mask cleanup, no enhancement or resizing");
+        JPanel dialogPanel = buildContent();
+        bindParameterEvents(dialogPanel);
+        updateInputModeControls();
 
         Container container = getContentPane();
         container.add(dialogPanel);
@@ -240,11 +250,16 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         this.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent evt) {
-                ATPreferences.savePreferences(buildAnalyzerParamsFromUi(), AngioTool.PREFS_TXT);
+                try {
+                    AnalyzerParameters params = buildAnalyzerParamsFromUi();
+                    if (params.validate().size == 0)
+                        ATPreferences.savePreferences(params, AngioTool.PREFS_TXT);
+                }
+                catch (IllegalArgumentException ignored) {}
                 if (pluginCtx != null) {
-                    ImagingWindow iw = imagingWindows.poll();
-                    if (iw != null)
-                        Misc.sendWindowCloseEvent(iw);
+                    for (ImagingWindow iw : new LinkedList<>(imagingWindows))
+                        closeImagingWindow(iw);
+                    dispose();
                 }
                 else {
                     AngioToolGui2.this.setVisible(false);
@@ -253,16 +268,14 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
             }
         });
 
-        Dimension minSize = this.getPreferredSize();
-        this.setMinimumSize(minSize);
-        this.setSize(new Dimension(minSize.width + 50, minSize.height + 10));
-
-        this.setLocation(new Point(200, 250));
+        this.setMinimumSize(UiTheme.size(1040, 580));
+        UiTheme.place(this, null, 1480, 900);
+        mainWorkspace.setDividerLocation(UiTheme.size(400, 0).width);
 
         if (pluginCtx != null) {
             EventQueue.invokeLater(() -> {
                 ArgbBuffer image = pluginCtx.makeArgbCopy();
-                imagingWindows.add(new ImagingWindow(this, image, 1.0, pluginCtx.imageFile, defaultPath).showDialog());
+                new ImagingWindow(this, image, 1.0, pluginCtx.imageFile, defaultPath).showInWorkspace();
             });
         }
 
@@ -271,16 +284,23 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
     void setAnalysisUi(AnalyzerParameters analyzerParams)
     {
+        updatingUi = true;
+        cbUseBinaryMask.setSelected(analyzerParams.shouldUseBinaryMask);
         rbSkelFast.setSelected(analyzerParams.shouldUseFastSkeletonizer);
         rbSkelThorough.setSelected(!analyzerParams.shouldUseFastSkeletonizer);
         cbComputeLacunarity.setSelected(analyzerParams.shouldComputeLacunarity);
         cbComputeThickness.setSelected(analyzerParams.shouldComputeThickness);
+        cbNormalizeOutputData.setSelected(analyzerParams.shouldNormalizeOutputData);
 
         elemMaxSkelIterations.update(analyzerParams.shouldCapSkelIterations, analyzerParams.maxSkelIterations);
+        elemPruneSkeleton.update(analyzerParams.shouldPruneSkeleton, analyzerParams.maxTerminalBranchLength);
+        elemMergeJunctions.update(analyzerParams.shouldMergeNearbyJunctions, analyzerParams.maxJunctionMergeDistance);
         elemResizeInputs.update(analyzerParams.shouldResizeImage, 100.0 * analyzerParams.resizingFactor);
         elemLinearScaleFactor.update(analyzerParams.shouldApplyLinearScale, 100.0 * analyzerParams.linearScalingFactor);
         elemRemoveParticles.update(analyzerParams.shouldRemoveSmallParticles, analyzerParams.removeSmallParticlesThreshold);
         elemFillHoles.update(analyzerParams.shouldFillHoles, analyzerParams.fillHolesValue);
+        elemBinaryFillHoles.update(analyzerParams.binaryFillHoles, analyzerParams.binaryHoleRadius);
+        elemBinaryRemoveParticles.update(analyzerParams.binaryRemoveSmallParticles, analyzerParams.binarySmallParticleRadius);
 
         textSigmas.setText(Misc.formatDoubleArray(analyzerParams.sigmas, "12"));
         textMinIntensity.setText("" + analyzerParams.thresholdLow);
@@ -312,255 +332,197 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         rbImageIsolated.setSelected(analyzerParams.shouldIsolateBrightestChannelInOutput && !analyzerParams.shouldExpandOutputToGrayScale);
         rbImageGray.setSelected(analyzerParams.shouldIsolateBrightestChannelInOutput && analyzerParams.shouldExpandOutputToGrayScale);
 
-        maybeUpdateImagingWindows();
+        updatingUi = false;
+        updateInputModeControls();
+        toggleTransformColors();
     }
 
     private void initButton(JButton button, ImageIcon icon, String text)
     {
-        button.setIcon(icon);
-        button.setVerticalTextPosition(SwingConstants.BOTTOM);
-        button.setHorizontalTextPosition(SwingConstants.CENTER);
+        button.setIcon(AngioTool.createResizedIcon(icon, 18, 18));
+        button.setHorizontalTextPosition(SwingConstants.RIGHT);
         button.setText(text);
     }
 
-    private void arrangeUi(GroupLayout layout)
+    private JPanel buildContent()
     {
-        GroupLayout.ParallelGroup hozMainParallel = layout.createParallelGroup();
-        GroupLayout.SequentialGroup hozButtonRowLayout = layout.createSequentialGroup();
+        JPanel root = new JPanel(new BorderLayout());
+        JPanel header = new JPanel(new BorderLayout(18, 0));
+        header.setBorder(new EmptyBorder(12, 18, 12, 18));
+        JLabel title = new JLabel(AngioTool.TITLE);
+        title.setFont(title.getFont().deriveFont(Font.BOLD, UiTheme.fontSize(22f)));
+        header.add(title, BorderLayout.WEST);
+        btnLoadImageOrSubmit.setText(pluginCtx == null ? "Open image" : "Submit to ImageJ");
+        btnLoadImageOrSubmit.setIcon(new FlatFileViewDirectoryIcon());
+        btnStartBatch.setText("Batch");
+        btnStartBatch.setIcon(new FlatFileChooserDetailsViewIcon());
+        btnHelp.setText("");
+        btnHelp.setIcon(new FlatHelpButtonIcon());
+        UiTheme.tool(btnHelp, "Help");
+        UiTheme.primary(btnLoadImageOrSubmit);
+        header.add(pluginCtx == null ?
+            UiTheme.row(btnLoadImageOrSubmit, btnStartBatch, btnHelp) :
+            UiTheme.row(btnLoadImageOrSubmit, btnHelp), BorderLayout.EAST);
+        root.add(header, BorderLayout.NORTH);
 
-        layout.setHorizontalGroup(hozMainParallel
-            .addGroup(pluginCtx != null ?
-                (
-                    hozButtonRowLayout
-                        .addComponent(btnLoadImageOrSubmit)
-                        .addGap(0, 0, Short.MAX_VALUE)
-                        .addComponent(btnHelp)
-                ) : (
-                    hozButtonRowLayout
-                        .addComponent(btnLoadImageOrSubmit)
-                        .addComponent(btnStartBatch)
-                        .addGap(0, 0, Short.MAX_VALUE)
-                        .addComponent(btnHelp)
-                )
-            )
-            .addGroup(layout.createSequentialGroup()
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(labelAnalysis)
-                    .addGroup(elemFillHoles.addToSeqGroup(layout.createSequentialGroup()))
-                    .addGroup(elemRemoveParticles.addToSeqGroup(layout.createSequentialGroup()))
-                    .addGroup(elemMaxHoleLevelPercent.addToSeqGroup(layout.createSequentialGroup()))
-                    .addGroup(elemMinBoxnessPercent.addToSeqGroup(layout.createSequentialGroup()))
-                    .addGroup(elemMinAreaLengthRatio.addToSeqGroup(layout.createSequentialGroup()))
-                )
-                .addGap(16, 16, Short.MAX_VALUE)
-                .addGroup(layout.createParallelGroup()
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(cbComputeLacunarity)
-                        .addGap(16)
-                        .addComponent(cbComputeThickness)
-                    )
-                    .addGroup(layout.createSequentialGroup()
-                        .addGap(4)
-                        .addComponent(labelSkeletonizer)
-                        .addGroup(layout.createParallelGroup()
-                            .addComponent(rbSkelFast)
-                            .addComponent(rbSkelThorough)
-                        )
-                    )
-                    .addGroup(elemMaxSkelIterations.addToSeqGroup(layout.createSequentialGroup()))
-                    .addGroup(elemResizeInputs.addToSeqGroup(layout.createSequentialGroup()))
-                    .addGroup(elemLinearScaleFactor.addToSeqGroup(layout.createSequentialGroup()))
-                )
-            )
-            .addGroup(layout.createSequentialGroup()
-                .addComponent(cbTransformColors)
-                .addGap(0, 0, Short.MAX_VALUE)
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(labelSaturationFactor)
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(labelSatPercent)
-                        .addGap(4)
-                        .addComponent(textSaturationFactor, 0, 48, 48)
-                    )
-                )
-                .addGap(12)
-                .addGroup(
-                    elemVoidColor.addWithWidth(layout.createParallelGroup().addComponent(labelVoidColor))
-                )
-                .addGap(12)
-                .addGroup(
-                    elemTargetColor.addWithWidth(layout.createParallelGroup().addComponent(labelTargetColor))
-                )
-                .addGap(0, 0, Short.MAX_VALUE)
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(labelHueBrightness)
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(textHueWeight, 0, 48, 48)
-                        .addGap(4)
-                        .addComponent(labelHbRatio)
-                        .addGap(4)
-                        .addComponent(textBrightnessWeight, 0, 48, 48)
-                    )
-                )
-            )
-            .addGroup(layout.createParallelGroup()
-                .addComponent(labelBrightnessGraph)
-                .addComponent(textBrightnessSegments, 0, 200, Short.MAX_VALUE)
-            )
-            .addGroup(layout.createSequentialGroup()
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(labelSigmas)
-                    .addComponent(textSigmas)
-                )
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(labelIntensity)
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(textMinIntensity)
-                        .addComponent(textMaxIntensity)
-                    )
-                )
-            )
-            .addComponent(labelOverlay)
-            .addGroup(
-                Misc.arrangeParallelEntries(
-                    elemBranches, elemConvexHull, layout, Misc.arrangeParallelEntries(
-                        elemOutline, elemSkeleton, layout, layout.createSequentialGroup()
-                    ).addGap(20)
-                )
-            )
-            .addGroup(layout.createSequentialGroup()
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(btnReset)
-                    .addComponent(labelMemory)
-                )
-                .addGap(0, 0, Short.MAX_VALUE)
-                .addGroup(layout.createParallelGroup()
-                    .addComponent(rbImageOriginal)
-                    .addComponent(rbImageIsolated)
-                    .addComponent(rbImageGray)
-                )
-            )
-        );
+        JPanel thresholds = new JPanel(new GridLayout(1, 2, 12, 0));
+        thresholds.add(UiTheme.field("Minimum intensity", textMinIntensity));
+        thresholds.add(UiTheme.field("Maximum intensity", textMaxIntensity));
+        textMinIntensity.setToolTipText("Inclusive lower threshold, 0 to 255");
+        textMaxIntensity.setToolTipText("Inclusive upper threshold, 0 to 255");
+        textSigmas.setToolTipText("Gaussian / Hessian sigma values, separated by commas");
+        JPanel normalCleanup = new JPanel(new GridLayout(2, 1, 0, 8));
+        normalCleanup.add(elemFillHoles.buildRow());
+        normalCleanup.add(elemRemoveParticles.buildRow());
+        JPanel binaryCleanup = new JPanel(new GridLayout(2, 1, 0, 8));
+        binaryCleanup.add(elemBinaryFillHoles.buildRow());
+        binaryCleanup.add(elemBinaryRemoveParticles.buildRow());
+        cleanupInputs.add(normalCleanup, "detection");
+        cleanupInputs.add(binaryCleanup, "binary");
+        parameterTabs.addTab("Analysis", UiTheme.scrollColumn(
+            UiTheme.section("Vessel detection",
+                cbUseBinaryMask,
+                UiTheme.field("Enhancement scales (sigma)", textSigmas), thresholds),
+            UiTheme.section("Mask cleanup", cleanupInputs, UiTheme.disclosure("Advanced cleanup",
+                    elemMaxHoleLevelPercent.buildRow(), elemMinBoxnessPercent.buildRow(),
+                    elemMinAreaLengthRatio.buildRow())),
+            UiTheme.section("Skeleton & measurements",
+                UiTheme.row(rbSkelFast, rbSkelThorough),
+                elemMaxSkelIterations.buildRow(),
+                elemPruneSkeleton.buildRow(),
+                elemMergeJunctions.buildRow(),
+                UiTheme.row(cbComputeThickness, cbComputeLacunarity),
+                cbNormalizeOutputData,
+                elemLinearScaleFactor.buildRow()),
+            UiTheme.section("Input size", elemResizeInputs.buildRow())
+        ));
 
-        final int MIN_TEXT_HEIGHT = 18;
-        final int TEXT_HEIGHT = 24;
+        JPanel colors = new JPanel(new GridLayout(1, 2, 12, 0));
+        colors.add(UiTheme.field("Target color", UiTheme.row(elemTargetColor.panel)));
+        colors.add(UiTheme.field("Excluded color", UiTheme.row(elemVoidColor.panel)));
+        JPanel weights = new JPanel(new GridLayout(1, 2, 12, 0));
+        weights.add(UiTheme.field("Hue weight", textHueWeight));
+        weights.add(UiTheme.field("Brightness weight", textBrightnessWeight));
+        parameterTabs.addTab("Color", UiTheme.scrollColumn(
+            UiTheme.section("Color preprocessing", cbTransformColors, colors,
+                UiTheme.field("Saturation (%)", textSaturationFactor), weights,
+                UiTheme.field("Brightness curve", textBrightnessSegments))
+        ));
+        elemTargetColor.panel.setEnabled(cbTransformColors.isSelected());
+        elemVoidColor.panel.setEnabled(cbTransformColors.isSelected());
+        parameterTabs.addTab("Overlay", UiTheme.scrollColumn(
+            UiTheme.section("Visible layers", elemOutline.buildRow(),
+                elemSkeleton.buildRow(), elemBranches.buildRow(), elemConvexHull.buildRow()),
+            UiTheme.section("Image background", rbImageOriginal, rbImageIsolated, rbImageGray)
+        ));
+        JPanel parameterPanel = new JPanel(new BorderLayout());
+        parameterPanel.add(parameterTabs, BorderLayout.CENTER);
+        parameterPanel.setMinimumSize(UiTheme.size(370, 200));
+        parameterPanel.setPreferredSize(UiTheme.size(400, 700));
 
-        GroupLayout.SequentialGroup vertMainSequential = layout.createSequentialGroup();
-        GroupLayout.ParallelGroup vertButtonRowLayout = layout.createParallelGroup(GroupLayout.Alignment.BASELINE);
+        JPanel footer = new JPanel(new BorderLayout(12, 10));
+        footer.setBorder(new EmptyBorder(12, 18, 14, 18));
+        btnReset.setText("Reset defaults");
+        footer.add(btnReset, BorderLayout.WEST);
+        labelMemory.setForeground(UiTheme.MUTED);
+        labelMemory.setHorizontalAlignment(SwingConstants.RIGHT);
+        footer.add(labelMemory, BorderLayout.CENTER);
+        labelStatus.setForeground(UiTheme.MUTED);
+        parameterPanel.add(footer, BorderLayout.SOUTH);
+        labelStatus.setBorder(new EmptyBorder(7, 18, 9, 18));
+        root.add(labelStatus, BorderLayout.SOUTH);
 
-        layout.setVerticalGroup(vertMainSequential
-            .addGroup(pluginCtx != null ?
-                (
-                    vertButtonRowLayout
-                        .addComponent(btnLoadImageOrSubmit)
-                        .addComponent(btnHelp)
-                ) : (
-                    vertButtonRowLayout
-                        .addComponent(btnLoadImageOrSubmit)
-                        .addComponent(btnStartBatch)
-                        .addComponent(btnHelp)
-                )
-            )
-            .addGap(20)
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                .addComponent(labelAnalysis)
-                .addComponent(cbComputeLacunarity)
-                .addComponent(cbComputeThickness)
-            )
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                .addGroup(layout.createSequentialGroup()
-                    .addGroup(elemFillHoles.addToParaGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)))
-                    .addGroup(elemRemoveParticles.addToParaGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)))
-                )
-                .addGroup(layout.createSequentialGroup()
-                    .addGap(0, 0, 16)
-                    .addComponent(labelSkeletonizer)
-                    .addGap(0, 0, 16)
-                )
-                .addGroup(layout.createSequentialGroup()
-                    .addComponent(rbSkelFast)
-                    .addComponent(rbSkelThorough)
-                )
-            )
-            .addGroup(
-                elemMaxSkelIterations.addToParaGroup(
-                    elemMaxHoleLevelPercent.addToParaGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE))
-                )
-            )
-            .addGroup(
-                elemResizeInputs.addToParaGroup(
-                    elemMinBoxnessPercent.addToParaGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE))
-                )
-            )
-            .addGroup(
-                elemLinearScaleFactor.addToParaGroup(
-                    elemMinAreaLengthRatio.addToParaGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE))
-                )
-            )
-            .addGap(12)
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                .addGroup(layout.createSequentialGroup()
-                    .addGap(9)
-                    .addComponent(cbTransformColors)
-                    .addGap(9)
-                )
-                .addGroup(layout.createSequentialGroup()
-                    .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                        .addComponent(labelSaturationFactor)
-                        .addComponent(labelVoidColor)
-                        .addComponent(labelTargetColor)
-                        .addComponent(labelHueBrightness)
-                    )
-                    .addGroup(
-                        elemTargetColor.addWithHeight(
-                            elemVoidColor.addWithHeight(
-                                layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                                    .addComponent(labelSatPercent)
-                                    .addComponent(textSaturationFactor, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-                            )
-                        )
-                        .addComponent(textHueWeight, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-                        .addComponent(labelHbRatio)
-                        .addComponent(textBrightnessWeight, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-                    )
-                )
-            )
-            .addComponent(labelBrightnessGraph)
-            .addComponent(textBrightnessSegments, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-            .addGap(12)
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                .addComponent(labelSigmas)
-                .addComponent(labelIntensity)
-            )
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                .addComponent(textSigmas, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-                .addComponent(textMinIntensity, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-                .addComponent(textMaxIntensity, MIN_TEXT_HEIGHT, TEXT_HEIGHT, TEXT_HEIGHT)
-            )
-            .addGap(20)
-            .addComponent(labelOverlay)
-            .addGap(12)
-            .addGroup(
-                elemBranches.addToParaGroup(
-                    elemOutline.addToParaGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE))
-                )
-            )
-            .addGroup(
-                elemConvexHull.addToParaGroup(
-                    elemSkeleton.addToParaGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE))
-                )
-            )
-            .addGap(8)
-            .addComponent(rbImageOriginal)
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                .addComponent(btnReset)
-                .addComponent(rbImageIsolated)
-            )
-            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                .addComponent(labelMemory)
-                .addComponent(rbImageGray)
-            )
-        );
+        JPanel empty = new JPanel(new GridBagLayout());
+        empty.setBackground(new Color(29, 32, 35));
+        JLabel emptyLabel = new JLabel("No image open");
+        emptyLabel.setForeground(new Color(175, 186, 193));
+        emptyLabel.setFont(emptyLabel.getFont().deriveFont(UiTheme.fontSize(18f)));
+        empty.add(emptyLabel);
+        imageTabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+        imageTabs.addChangeListener(e -> {
+            Component selected = imageTabs.getSelectedComponent();
+            if (selected instanceof ImagingWindow)
+                ((ImagingWindow)selected).requestFocusInWindow();
+        });
+        imageArea.add(empty, "empty");
+        imageArea.add(imageTabs, "images");
+        imageCards.show(imageArea, "empty");
+        imageArea.setMinimumSize(UiTheme.size(600, 200));
+        mainWorkspace.setLeftComponent(parameterPanel);
+        mainWorkspace.setRightComponent(imageArea);
+        mainWorkspace.setResizeWeight(0);
+        mainWorkspace.setContinuousLayout(true);
+        mainWorkspace.setBorder(BorderFactory.createEmptyBorder());
+        root.add(mainWorkspace, BorderLayout.CENTER);
+        return root;
+    }
+
+    void attachImage(ImagingWindow image)
+    {
+        if (imagingWindows.contains(image))
+            return;
+        imagingWindows.add(image);
+        String name = image.inputFile != null ? image.inputFile.getName() : "ImageJ image";
+        imageTabs.addTab(name, image);
+        int index = imageTabs.indexOfComponent(image);
+        JPanel tab = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 6, 0));
+        tab.setOpaque(false);
+        JLabel label = new JLabel(name);
+        label.setPreferredSize(UiTheme.size(150, 24));
+        label.setToolTipText(image.inputFile != null ? image.inputFile.getAbsolutePath() : name);
+        // Custom tab headers receive mouse events instead of the tabbed pane.
+        java.awt.event.MouseAdapter selectTab = new java.awt.event.MouseAdapter()
+        {
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent event)
+            {
+                if (SwingUtilities.isLeftMouseButton(event) && imageTabs.indexOfComponent(image) >= 0)
+                    imageTabs.setSelectedComponent(image);
+            }
+        };
+        tab.addMouseListener(selectTab);
+        label.addMouseListener(selectTab);
+        JButton close = new JButton(new FlatTabbedPaneCloseIcon());
+        close.setPreferredSize(UiTheme.size(24, 24));
+        close.setMargin(new java.awt.Insets(0, 0, 0, 0));
+        close.setBorderPainted(false);
+        close.setContentAreaFilled(false);
+        close.setToolTipText("Close " + name);
+        close.getAccessibleContext().setAccessibleName("Close " + name);
+        close.addActionListener(e -> closeImagingWindow(image));
+        tab.add(label);
+        tab.add(close);
+        imageTabs.setTabComponentAt(index, tab);
+        imageTabs.setToolTipTextAt(index, label.getToolTipText());
+        imageCards.show(imageArea, "images");
+        imageTabs.setSelectedComponent(image);
+        imageArea.revalidate();
+        validate();
+        image.initializeDivider();
+        updateMemoryMonitor();
+        labelStatus.setText(imagingWindows.size() + " image(s) | Shared analysis parameters");
+    }
+
+    private void bindParameterEvents(Component component)
+    {
+        if (component instanceof JSpinner) {
+            ((JSpinner)component).addChangeListener(e ->
+                EventQueue.invokeLater(this::maybeUpdateImagingWindows));
+            JFormattedTextField editor = ((JSpinner.DefaultEditor)((JSpinner)component)
+                .getEditor()).getTextField();
+            editor.addFocusListener(this);
+            editor.addKeyListener(this);
+            return;
+        }
+        if (component instanceof AbstractButton)
+            ((AbstractButton)component).addActionListener(this);
+        if (component instanceof JTextField) {
+            component.addFocusListener(this);
+            component.addKeyListener(this);
+        }
+        if (component instanceof Container)
+            for (Component child : ((Container)component).getComponents())
+                bindParameterEvents(child);
     }
 
     @Override
@@ -582,7 +544,15 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         else if (source == btnHelp)
             openHelpWindow();
         else if (source == btnReset)
-            setAnalysisUi(AnalyzerParameters.defaults());
+        {
+            if (JOptionPane.showConfirmDialog(this, "Reset all analysis and overlay parameters?",
+                    "Reset defaults", JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION)
+                setAnalysisUi(AnalyzerParameters.defaults());
+        }
+        else if (source == cbUseBinaryMask) {
+            updateInputModeControls();
+            maybeUpdateImagingWindows();
+        }
         else if (source == cbTransformColors)
             toggleTransformColors();
         else
@@ -613,6 +583,11 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
     void submitOverlayedImage()
     {
+        if (imagingWindows.isEmpty() || imagingWindows.getFirst().imageUi.waiting ||
+                imagingWindows.getFirst().imageUi.currentStats == null) {
+            labelStatus.setText("Wait for an analysis result before submitting.");
+            return;
+        }
         ImagingWindow imageWindow = imagingWindows.get(0);
         Raster raster = imageWindow.getImageRaster();
 
@@ -626,11 +601,13 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
     void openImageThenImagingWindow()
     {
+        if (validatedParams() == null)
+            return;
         File imageFile = openImageFile();
         if (imageFile == null)
             return;
 
-        double resizeFactor = elemResizeInputs.cb.isSelected() ? elemResizeInputs.getValue() / 100.0 : 1.0;
+        double resizeFactor = buildAnalyzerParamsFromUi().effectiveResizeFactor();
 
         ArgbBuffer image = null;
         Exception error = null;
@@ -651,7 +628,7 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
             return;
         }
 
-        imagingWindows.add(new ImagingWindow(this, image, resizeFactor, imageFile, defaultPath).showDialog());
+        new ImagingWindow(this, image, resizeFactor, imageFile, defaultPath).showInWorkspace();
 
         updateMemoryMonitor();
     }
@@ -717,18 +694,50 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
     void toggleTransformColors()
     {
-        boolean enabled = cbTransformColors.isSelected();
+        boolean enabled = cbTransformColors.isSelected() && !cbUseBinaryMask.isSelected();
         textSaturationFactor.setEnabled(enabled);
         textHueWeight.setEnabled(enabled);
         textBrightnessWeight.setEnabled(enabled);
         textBrightnessSegments.setEnabled(enabled);
+        elemVoidColor.panel.setEnabled(enabled);
+        elemTargetColor.panel.setEnabled(enabled);
 
         maybeUpdateImagingWindows();
     }
 
+    private void updateInputModeControls()
+    {
+        boolean detection = !cbUseBinaryMask.isSelected();
+        ((CardLayout)cleanupInputs.getLayout()).show(cleanupInputs, detection ? "detection" : "binary");
+        for (NumberEntry entry : new NumberEntry[] {elemBinaryFillHoles, elemBinaryRemoveParticles}) {
+            entry.cb.setEnabled(!detection);
+            entry.spinner.setEnabled(!detection && entry.cb.isSelected());
+        }
+        textSigmas.setEnabled(detection);
+        textMinIntensity.setEnabled(detection);
+        textMaxIntensity.setEnabled(detection);
+        cbTransformColors.setEnabled(detection);
+        for (NumberEntry entry : new NumberEntry[] {elemResizeInputs, elemFillHoles,
+                elemRemoveParticles, elemMaxHoleLevelPercent, elemMinBoxnessPercent,
+                elemMinAreaLengthRatio}) {
+            entry.cb.setEnabled(detection);
+            entry.spinner.setEnabled(detection && entry.cb.isSelected());
+        }
+        boolean color = detection && cbTransformColors.isSelected();
+        for (JTextField field : new JTextField[] {textSaturationFactor, textHueWeight,
+                textBrightnessWeight, textBrightnessSegments})
+            field.setEnabled(color);
+        elemVoidColor.panel.setEnabled(color);
+        elemTargetColor.panel.setEnabled(color);
+    }
+
     void maybeUpdateImagingWindows()
     {
-        AnalyzerParameters params = buildAnalyzerParamsFromUi();
+        if (updatingUi)
+            return;
+        AnalyzerParameters params = validatedParams();
+        if (params == null)
+            return;
 
         if (latestAnalyzerParams != null && params.equals(latestAnalyzerParams)) {
             updateMemoryMonitor();
@@ -745,8 +754,87 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
     public void closeImagingWindow(ImagingWindow window)
     {
-        window.release();
+        window.closeSafely();
         imagingWindows.remove(window);
+        imageTabs.remove(window);
+        if (imageTabs.getTabCount() == 0)
+            imageCards.show(imageArea, "empty");
+        imageArea.revalidate();
+        imageArea.repaint();
+        updateMemoryMonitor();
+        labelStatus.setText(imagingWindows.isEmpty() ? "Ready" :
+            imagingWindows.size() + " image(s) | Shared analysis parameters");
+    }
+
+    AnalyzerParameters validatedParams()
+    {
+        try {
+            AnalyzerParameters params = buildAnalyzerParamsFromUi();
+            RefVector<String> errors = params.validate();
+            if (errors.size > 0)
+                throw new IllegalArgumentException(errors.buf[0]);
+            labelStatus.setForeground(UiTheme.MUTED);
+            labelStatus.setText(imagingWindows.isEmpty() ? "Ready" :
+                imagingWindows.size() + " image(s) | Shared analysis parameters");
+            labelStatus.setToolTipText(null);
+            return params;
+        }
+        catch (IllegalArgumentException ex) {
+            labelStatus.setForeground(UiTheme.ERROR);
+            labelStatus.setText(ex.getMessage());
+            labelStatus.setToolTipText(ex.getMessage());
+            return null;
+        }
+    }
+
+    static double number(JTextField field, String name)
+    {
+        try {
+            double value = Double.parseDouble(field.getText().trim());
+            if (!Double.isFinite(value))
+                throw new NumberFormatException();
+            return value;
+        }
+        catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(name + ": enter a valid number.");
+        }
+    }
+
+    static int intensity(JTextField field, String name)
+    {
+        double value = number(field, name);
+        if (value != Math.rint(value) || value < 0 || value > 255)
+            throw new IllegalArgumentException(name + ": enter an integer from 0 to 255.");
+        return (int)value;
+    }
+
+    private double detectionNumber(JTextField field, String name, double fallback)
+    {
+        try {
+            return number(field, name);
+        }
+        catch (IllegalArgumentException ex) {
+            if (!cbUseBinaryMask.isSelected())
+                throw ex;
+            return fallback;
+        }
+    }
+
+    private double detectionNumber(NumberEntry entry)
+    {
+        return detectionNumber(entry.tf, entry.name, entry.originalValue);
+    }
+
+    private int detectionIntensity(JTextField field, String name, int fallback)
+    {
+        try {
+            return intensity(field, name);
+        }
+        catch (IllegalArgumentException ex) {
+            if (!cbUseBinaryMask.isSelected())
+                throw ex;
+            return fallback;
+        }
     }
 
     public AnalyzerParameters buildAnalyzerParamsFromUi()
@@ -770,29 +858,30 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
             shouldExpandToGrayScale = false;
         }
 
-        return new AnalyzerParameters(
+        boolean binary = cbUseBinaryMask.isSelected();
+        AnalyzerParameters params = new AnalyzerParameters(
             elemResizeInputs.cb.isSelected(),
-            elemResizeInputs.getValue() / 100.0,
+            detectionNumber(elemResizeInputs) / 100.0,
             cbTransformColors.isSelected(),
-            Misc.parseDouble(textHueWeight.getText(), 0.0),
-            Misc.parseDouble(textBrightnessWeight.getText(), 0.0),
+            detectionNumber(textHueWeight, "Hue weight", 1.0),
+            detectionNumber(textBrightnessWeight, "Brightness weight", 1.0),
             elemTargetColor.color,
             elemVoidColor.color,
-            Misc.parseDouble(textSaturationFactor.getText(), 100.0) / 100.0,
+            detectionNumber(textSaturationFactor, "Saturation", 100.0) / 100.0,
             Misc.getSomeInts(textBrightnessSegments.getText()),
             elemMaxHoleLevelPercent.cb.isSelected(),
-            elemMaxHoleLevelPercent.getValue() / 100.0,
+            detectionNumber(elemMaxHoleLevelPercent) / 100.0,
             elemMinBoxnessPercent.cb.isSelected(),
-            elemMinBoxnessPercent.getValue() / 100.0,
+            detectionNumber(elemMinBoxnessPercent) / 100.0,
             elemMinAreaLengthRatio.cb.isSelected(),
-            elemMinAreaLengthRatio.getValue(),
+            detectionNumber(elemMinAreaLengthRatio),
             elemRemoveParticles.cb.isSelected(),
-            elemRemoveParticles.getValue(),
+            detectionNumber(elemRemoveParticles),
             elemFillHoles.cb.isSelected(),
-            elemFillHoles.getValue(),
+            detectionNumber(elemFillHoles),
             Misc.getSomeDoubles(textSigmas.getText()),
-            Misc.parseInt(textMaxIntensity.getText(), 255),
-            Misc.parseInt(textMinIntensity.getText(), 0),
+            detectionIntensity(textMaxIntensity, "Maximum intensity", 255),
+            detectionIntensity(textMinIntensity, "Minimum intensity", 15),
             shouldUseFastSkel,
             elemMaxSkelIterations.cb.isSelected(),
             (int)elemMaxSkelIterations.getValue(),
@@ -815,6 +904,19 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
             cbComputeLacunarity.isSelected(),
             cbComputeThickness.isSelected()
         );
+        params.shouldPruneSkeleton = elemPruneSkeleton.cb.isSelected();
+        params.maxTerminalBranchLength = elemPruneSkeleton.getValue();
+        params.shouldMergeNearbyJunctions = elemMergeJunctions.cb.isSelected();
+        params.maxJunctionMergeDistance = elemMergeJunctions.getValue();
+        params.shouldNormalizeOutputData = cbNormalizeOutputData.isSelected();
+        params.shouldUseBinaryMask = binary;
+        params.binaryFillHoles = elemBinaryFillHoles.cb.isSelected();
+        params.binaryRemoveSmallParticles = elemBinaryRemoveParticles.cb.isSelected();
+        params.binaryHoleRadius = binary ? elemBinaryFillHoles.getValue() :
+            ((Number)elemBinaryFillHoles.spinner.getValue()).doubleValue();
+        params.binarySmallParticleRadius = binary ? elemBinaryRemoveParticles.getValue() :
+            ((Number)elemBinaryRemoveParticles.spinner.getValue()).doubleValue();
+        return params;
     }
 
     public void updateMemoryMonitor()
@@ -823,6 +925,6 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         long maxMB  = (rt.maxMemory() + (1L << 19)) >> 20L;
         long usedMB = (rt.totalMemory() - rt.freeMemory() + (1L << 19)) >> 20L;
 
-        labelMemory.setText("Used MB: " + usedMB + " / " + maxMB);
+        labelMemory.setText(usedMB + " / " + maxMB + " MB");
     }
 }

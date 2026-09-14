@@ -18,7 +18,7 @@ public class BatchProcessing
 {
     public static final long NANOS_PER_SEC = 1000000000L;
 
-    static final HashSet<String> suffixesToSkip = Misc.makeHashSetFromStringArray(new String[] {
+    static final HashSet<String> suffixesToSkip = Misc.makeHashSetFromStringArray(new String[] {"raw-skeleton", "pruned-skeleton",
         "result",
         "tubeness",
         "thresholded",
@@ -94,9 +94,10 @@ public class BatchProcessing
             void runImpl()
             {
                 ISliceRunner sliceRunner = new ISliceRunner.Series();
-                Analyzer.Data data = new Analyzer.Data(params.brightnessLineSegments, params.brightnessLineSegments.length / 2);
+                Analyzer.Data data = params.shouldUseBinaryMask ? new Analyzer.Data(null, 0) :
+                    new Analyzer.Data(params.brightnessLineSegments, params.brightnessLineSegments.length / 2);
 
-                double imageResizeFactor = params.shouldResizeImage ? params.resizingFactor : 1.0;
+                double imageResizeFactor = params.effectiveResizeFactor();
 
                 AnalysisInput input;
                 while ((input = inQueue.poll()) != null) {
@@ -126,7 +127,16 @@ public class BatchProcessing
                         result = Analyzer.analyze(data, input.file, inputImage, params, sliceRunner);
                         analyzeSucceeded = true;
                         if (batchParams.shouldSaveResultImages)
-                            saveResultImage(params, batchParams, data, result, inputImage, input.baseOutputPath, imageFormat);
+                            saveResultImage(
+                                params,
+                                batchParams,
+                                data,
+                                result,
+                                inputImage,
+                                input.file,
+                                input.baseOutputPath,
+                                imageFormat
+                            );
                     }
                     catch (Throwable ex) {
                         cancellationToken.set(true);
@@ -188,13 +198,15 @@ public class BatchProcessing
         if (batchParams.workerCount <= 0)
             return;
 
-        String imageFormat;
-        try {
-            imageFormat = resolveImageFormat(batchParams.resultImageFormat);
-        }
-        catch (Exception ex) {
-            Misc.showExceptionInDialogBox(ex);
-            return;
+        String imageFormat = null;
+        if (batchParams.shouldSaveResultImages && batchParams.shouldSaveImagesToSpecificFolder) {
+            try {
+                imageFormat = resolveImageFormat(batchParams.resultImageFormat);
+            }
+            catch (Exception ex) {
+                Misc.showExceptionInDialogBox(ex);
+                return;
+            }
         }
 
         uiToken.onEnumerationStart();
@@ -212,10 +224,23 @@ public class BatchProcessing
             return;
         }
 
-        File excelPath = new File(Misc.stripWrappingQuotes(batchParams.excelFilePath));
+        File excelPath = new File(batchParams.resolveExcelFilePath());
         SpreadsheetWriter writer;
+        SpreadsheetWriter normalizedWriter = null;
         try {
-            writer = createBatchWriterWithNewSheet(originalSheets, excelPath.getParentFile(), excelPath.getName(), params);
+            ArrayList<XlsxReader.SheetCells> workbookSheets = originalSheets;
+            if (batchParams.shouldUseAutomaticExcelPath && excelPath.isFile() && workbookSheets.isEmpty())
+                workbookSheets = XlsxReader.loadXlsxFromFile(excelPath.getAbsolutePath());
+            writer = createBatchWriterWithNewSheet(workbookSheets, excelPath.getParentFile(), excelPath.getName(), params);
+            if (params.shouldNormalizeOutputData) {
+                String normalizedName = normalizedWorkbookName(excelPath.getName());
+                File normalizedFile = new File(excelPath.getParentFile(), normalizedName);
+                ArrayList<XlsxReader.SheetCells> normalizedSheets = normalizedFile.isFile() ?
+                    XlsxReader.loadXlsxFromFile(normalizedFile.getAbsolutePath()) :
+                    new ArrayList<>();
+                normalizedWriter = createNormalizedBatchWriterWithNewSheet(
+                    normalizedSheets, excelPath.getParentFile(), normalizedName, params);
+            }
         }
         catch (IOException ex) {
             Misc.showExceptionInDialogBox(ex);
@@ -252,6 +277,8 @@ public class BatchProcessing
             Analyzer.threadPool.submit(workers.addWorker());
 
         writer.shouldSaveAfterEveryRow = false;
+        if (normalizedWriter != null)
+            normalizedWriter.shouldSaveAfterEveryRow = false;
 
         long lastSpreadsheetTime = 0L;
         boolean justSaved = false;
@@ -287,6 +314,11 @@ public class BatchProcessing
 
                 try { Analyzer.writeError(writer, result.error, result.file); }
                 catch (Exception ignored) {}
+                if (normalizedWriter != null) {
+                    normalizedWriter.shouldSaveAfterEveryRow = true;
+                    try { Analyzer.writeError(normalizedWriter, result.error, result.file); }
+                    catch (Exception ignored) {}
+                }
 
                 uiToken.onImageDone(result.file.getAbsolutePath(), result.error);
                 Misc.showExceptionInDialogBox(result.error);
@@ -302,12 +334,16 @@ public class BatchProcessing
             long resultTime = System.nanoTime();
             if (lastSpreadsheetTime == 0L || resultTime - lastSpreadsheetTime < 5 * NANOS_PER_SEC) {
                 writer.shouldSaveAfterEveryRow = true;
+                if (normalizedWriter != null)
+                    normalizedWriter.shouldSaveAfterEveryRow = true;
                 lastSpreadsheetTime = resultTime;
                 justSaved = true;
             }
 
             try {
                 writeBatchResultToSheet(writer, result.stats);
+                if (normalizedWriter != null)
+                    writeNormalizedBatchResultToSheet(normalizedWriter, params, result.stats);
             }
             catch (IOException ex) {
                 workers.cancellationToken.set(true);
@@ -317,6 +353,8 @@ public class BatchProcessing
             }
 
             writer.shouldSaveAfterEveryRow = false;
+            if (normalizedWriter != null)
+                normalizedWriter.shouldSaveAfterEveryRow = false;
             uiToken.onImageDone(result.file.getAbsolutePath(), null);
         }
 
@@ -328,6 +366,8 @@ public class BatchProcessing
         if (!justSaved) {
             try {
                 writer.save();
+                if (normalizedWriter != null)
+                    normalizedWriter.save();
             }
             catch (IOException ex) {
                 Misc.showExceptionInDialogBox(ex);
@@ -335,6 +375,8 @@ public class BatchProcessing
         }
 
         writer.shouldSaveAfterEveryRow = true;
+        if (normalizedWriter != null)
+            normalizedWriter.shouldSaveAfterEveryRow = true;
         uiToken.onFinished(writer);
     }
 
@@ -344,10 +386,30 @@ public class BatchProcessing
         Analyzer.Data data,
         Analyzer.Stats stats,
         ArgbBuffer inputImage,
+        File sourceFile,
         String basePath,
         String format
     ) throws IOException
     {
+        String resultImagePath;
+        String exportBasePath;
+        if (batchParams.shouldSaveImagesToSpecificFolder) {
+            resultImagePath = basePath + " result." + format;
+            exportBasePath = basePath;
+        }
+        else {
+            File resultImageFile = ImagingWindow.getDefaultResultImageFile(sourceFile);
+            if (resultImageFile == null)
+                throw new IOException("Result path could not be determined for: " + sourceFile);
+
+            ImagingWindow.ensureResultFolderExists(resultImageFile);
+            resultImagePath = resultImageFile.getAbsolutePath();
+
+            int extensionOffset = resultImagePath.lastIndexOf('.');
+            format = resultImagePath.substring(extensionOffset + 1).toLowerCase();
+            exportBasePath = resultImagePath.substring(0, extensionOffset);
+        }
+
         Analyzer.drawOverlay(
             params,
             data.convexHull,
@@ -361,9 +423,9 @@ public class BatchProcessing
             inputImage.brightestChannel
         );
 
-        ImageFile.saveImage(inputImage, format, basePath + " result." + format);
+        ImageFile.saveImage(inputImage, format, resultImagePath);
         OverlayDataExporter.export(
-            basePath,
+            exportBasePath,
             params,
             data,
             stats,
@@ -462,6 +524,8 @@ public class BatchProcessing
         File[] list = currentFolder.listFiles();
         for (File f : list) {
             if (f.isDirectory()) {
+                if ("results".equalsIgnoreCase(f.getName()))
+                    continue;
                 enumerateImageFilesRecursively(images, f, outputPathMap, uiToken);
                 if (uiToken.isClosed())
                     return;
@@ -469,19 +533,18 @@ public class BatchProcessing
             else if (f.isFile()) {
                 String name = f.getName().toLowerCase();
                 int extIdx = name.lastIndexOf('.');
-                if (extIdx <= 0)
-                    continue;
+                if (extIdx > 0) {
+                    int spaceIdx = name.lastIndexOf(' ');
+                    if (spaceIdx > 0 && spaceIdx < extIdx-1) {
+                        String lastWordInFileName = name.substring(spaceIdx + 1, extIdx);
+                        if (suffixesToSkip.contains(lastWordInFileName))
+                            continue;
+                    }
 
-                int spaceIdx = name.lastIndexOf(' ');
-                if (spaceIdx > 0 && spaceIdx < extIdx-1) {
-                    String lastWordInFileName = name.substring(spaceIdx + 1, extIdx);
-                    if (suffixesToSkip.contains(lastWordInFileName))
+                    String ext = name.substring(extIdx).toLowerCase();
+                    if (ext.equals(".txt") || ext.equals(".zip") || ext.equals(".xls") || ext.equals(".xlsx"))
                         continue;
                 }
-
-                String ext = name.substring(extIdx).toLowerCase();
-                if (ext.equals(".txt") || ext.equals(".zip") || ext.equals(".xls") || ext.equals(".xlsx"))
-                    continue;
 
                 images.add(f);
             }
@@ -519,7 +582,19 @@ public class BatchProcessing
             "Target Color",
             "Off Color",
             "Saturation Factor",
-            "Brightness Graph"
+            "Brightness Graph",
+            "Input Mode",
+            "Binary Remove Particles",
+            "Binary Particle Radius",
+            "Binary Fill Holes",
+            "Binary Hole Radius",
+            "Prune Terminal Branches",
+            "Max Terminal Branch Length (px)",
+            "Merge Nearby Junctions",
+            "Max Junction Merge Distance (px)",
+            "Cap Skeleton Steps",
+            "Junction Policy",
+            "Normalize Output Data"
         );
         writer.writeRow(
             params.thresholdLow,
@@ -539,7 +614,19 @@ public class BatchProcessing
             params.targetRemapColor.toString(),
             params.voidRemapColor.toString(),
             params.saturationFactor,
-            Misc.formatIntVecTwoPointArray(params.brightnessLineSegments)
+            Misc.formatIntVecTwoPointArray(params.brightnessLineSegments),
+            params.inputMode(),
+            params.binaryRemoveSmallParticles,
+            params.binarySmallParticleRadius,
+            params.binaryFillHoles,
+            params.binaryHoleRadius,
+            params.shouldPruneSkeleton,
+            params.maxTerminalBranchLength,
+            params.shouldMergeNearbyJunctions,
+            params.maxJunctionMergeDistance,
+            params.shouldCapSkelIterations,
+            "connected-region-plus-short-direct-skeleton-links",
+            params.shouldNormalizeOutputData
         );
         writer.writeRow(
             "Results"
@@ -558,6 +645,7 @@ public class BatchProcessing
             "Junctions Density",
             "Total Vessels Length",
             "Average Vessels Length",
+            "Average Segment Length",
             "Total Number of End Points",
             "Average Vessel Diameter",
             "Medial E Lacunarity",
@@ -565,10 +653,152 @@ public class BatchProcessing
             "E Lacunarity Gradient",
             "Medial F Lacunarity",
             "Mean F Lacunarity",
-            "F Lacunarity Gradient"
+            "F Lacunarity Gradient",
+            "Fractal Dimension (Box-counting)",
+            "Fractal Fit R squared",
+            "Fractal Valid",
+            "Fractal Invalid Reason",
+            "Fractal Box Sizes (px)",
+            "Fractal Box Counts",
+            "Skeleton Converged",
+            "Pruning Status",
+            "Pruned Skeleton Pixels",
+            "Raw Skeleton Pixels"
         );
 
         return writer;
+    }
+
+    public static String normalizedWorkbookName(String fileName)
+    {
+        int dot = fileName.lastIndexOf('.');
+        if (dot > 0 && fileName.substring(dot).equalsIgnoreCase(".xlsx"))
+            return fileName.substring(0, dot) + "_nor" + fileName.substring(dot);
+        return fileName + "_nor.xlsx";
+    }
+
+    public static SpreadsheetWriter createNormalizedBatchWriterWithNewSheet(
+        ArrayList<XlsxReader.SheetCells> originalSheets,
+        File folder,
+        String sheetName,
+        AnalyzerParameters params
+    ) throws IOException
+    {
+        SpreadsheetWriter writer = new SpreadsheetWriter(folder, sheetName);
+        writer.addSheets(originalSheets);
+        writer.writeRow("Normalization Settings");
+        writer.writeRow(
+            "Rule Version",
+            "Basis Coordinate System",
+            "Area Rule",
+            "Length Rule",
+            "Count Rule",
+            "Configured Input Resize Factor",
+            "Measurement Scale"
+        );
+        writer.writeRow(
+            NormalizedMetrics.RULE_VERSION,
+            "analysis-image",
+            NormalizedMetrics.AREA_RULE,
+            NormalizedMetrics.LENGTH_RULE,
+            NormalizedMetrics.COUNT_RULE,
+            params.effectiveResizeFactor(),
+            params.shouldApplyLinearScale ? params.linearScalingFactor : 1.0
+        );
+        writer.writeRow("Normalized Results");
+        writer.writeRow(
+            "Image Name",
+            "Date",
+            "Time",
+            "Image Location",
+            "Analysis Width",
+            "Analysis Height",
+            "Analysis Image Area (px^2)",
+            "Length Basis sqrt(Image Area) (px)",
+            "Convex Hull Area / Image Area",
+            "Vessel Area / Image Area",
+            "Vessels Percentage Area of Hull",
+            "Total Number of Junctions",
+            "Junction Density x Image Area",
+            "Total Vessels Length / sqrt(Image Area)",
+            "Average Vessels Length / sqrt(Image Area)",
+            "Average Segment Length / sqrt(Image Area)",
+            "Total Number of End Points",
+            "Total Number of Segments",
+            "Average Vessel Diameter / sqrt(Image Area)",
+            "Medial E Lacunarity",
+            "Mean E Lacunarity",
+            "E Lacunarity Gradient",
+            "Medial F Lacunarity",
+            "Mean F Lacunarity",
+            "F Lacunarity Gradient",
+            "Fractal Dimension (Box-counting)",
+            "Fractal Fit R squared",
+            "Fractal Valid",
+            "Fractal Invalid Reason",
+            "Fractal Box Sizes (raw px)",
+            "Fractal Box Counts",
+            "Skeleton Converged",
+            "Pruning Status",
+            "Skeleton Pixels / sqrt(Image Area)",
+            "Pruned Skeleton Pixels / sqrt(Image Area)",
+            "Raw Skeleton Pixels / sqrt(Image Area)",
+            "Isolated Skeleton Pixel Count",
+            "Merged Junction Regions"
+        );
+        return writer;
+    }
+
+    public static void writeNormalizedBatchResultToSheet(
+        SpreadsheetWriter sw,
+        AnalyzerParameters params,
+        Analyzer.Stats stats
+    ) throws IOException
+    {
+        Date today = new Date();
+        NormalizedMetrics metrics = NormalizedMetrics.from(params, stats);
+        sw.writeRow(
+            stats.imageFileName,
+            sw.dateFormatter.format(today),
+            sw.timeFormatter.format(today),
+            stats.imageAbsolutePath,
+            metrics.analysisWidth,
+            metrics.analysisHeight,
+            metrics.analysisImageAreaPixels,
+            metrics.lengthBasisPixels,
+            metrics.convexHullAreaFractionOfImage,
+            metrics.vesselAreaFractionOfImage,
+            metrics.vesselsPercentageAreaOfHull,
+            metrics.junctionCount,
+            metrics.junctionDensityTimesImageArea,
+            metrics.totalLengthOverSqrtImageArea,
+            metrics.averageVesselsLengthOverSqrtImageArea,
+            metrics.averageSegmentLengthOverSqrtImageArea,
+            metrics.endPointCount,
+            metrics.segmentCount,
+            metrics.averageVesselDiameterOverSqrtImageArea,
+            stats.ELacunarityMedial,
+            stats.meanEl,
+            stats.ELacunarityCurve,
+            stats.FLacunarityMedial,
+            stats.meanFl,
+            stats.FLacunarityCurve,
+            Analyzer.fractalDimensionValue(stats.fractalBoxCount),
+            Analyzer.fractalFitValue(stats.fractalBoxCount),
+            stats.fractalBoxCount != null && stats.fractalBoxCount.valid,
+            Analyzer.fractalInvalidReason(stats.fractalBoxCount),
+            stats.fractalBoxCount != null && stats.fractalBoxCount.boxSizes != null ?
+                java.util.Arrays.toString(stats.fractalBoxCount.boxSizes) : "[]",
+            stats.fractalBoxCount != null && stats.fractalBoxCount.boxCounts != null ?
+                java.util.Arrays.toString(stats.fractalBoxCount.boxCounts) : "[]",
+            stats.skeletonConverged,
+            stats.pruningStatus,
+            metrics.skeletonPixelsOverSqrtImageArea,
+            metrics.prunedSkeletonPixelsOverSqrtImageArea,
+            metrics.rawSkeletonPixelsOverSqrtImageArea,
+            stats.isolatedSkeletonPixelCount,
+            stats.mergedJunctionRegionCount
+        );
     }
 
     public static void writeBatchResultToSheet(SpreadsheetWriter sw, Analyzer.Stats stats) throws IOException
@@ -591,6 +821,7 @@ public class BatchProcessing
             stats.junctionsPerScaledArea,
             stats.totalLength,
             stats.averageBranchLength,
+            stats.averageSegmentLength,
             stats.totalNEndPoints,
             stats.averageVesselDiameter,
             stats.ELacunarityMedial,
@@ -598,7 +829,20 @@ public class BatchProcessing
             stats.ELacunarityCurve,
             stats.FLacunarityMedial,
             stats.meanFl,
-            stats.FLacunarityCurve
+            stats.FLacunarityCurve,
+            Analyzer.fractalDimensionValue(stats.fractalBoxCount),
+            Analyzer.fractalFitValue(stats.fractalBoxCount),
+            stats.fractalBoxCount != null && stats.fractalBoxCount.valid,
+            Analyzer.fractalInvalidReason(stats.fractalBoxCount),
+            stats.fractalBoxCount != null && stats.fractalBoxCount.boxSizes != null ?
+                java.util.Arrays.toString(stats.fractalBoxCount.boxSizes) : "[]",
+            stats.fractalBoxCount != null && stats.fractalBoxCount.boxCounts != null ?
+                java.util.Arrays.toString(stats.fractalBoxCount.boxCounts) : "[]",
+            stats.skeletonConverged,
+            stats.pruningStatus,
+            stats.prunedSkeletonPixelCount,
+            stats.rawSkeletonPixelCount
         );
     }
+
 }

@@ -95,7 +95,10 @@ public class PreprocessColor
         }
 
         float targetVoidDistance = Math.abs(targetHue - voidHue);
-        float narrowingFactor = 1f / Math.min(6f - targetVoidDistance, targetVoidDistance);
+        float hueSeparation = Math.min(6f - targetVoidDistance, targetVoidDistance);
+        if (hueSeparation < 1e-4f)
+            hueSeparation = 1e-4f;
+        float narrowingFactor = 1f / hueSeparation;
 
         final float hueOppositeToTarget = (targetHue + 3f) % 6f;
 

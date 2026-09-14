@@ -1,9 +1,15 @@
 <html>
 <head>
 <style>
+body {
+    font-family: sans-serif;
+    font-size: 12px;
+    margin: 18px;
+    color: #232a2f;
+}
 h2 {
     margin-top: 20px;
-    text-decoration: underline;
+    color: #00747e;
 }
 h3 {
     margin-top: 20px;
@@ -19,8 +25,63 @@ h3 {
 </style>
 </head>
 <body>
-<h1>AngioTool 2.0 - Manual</h1>
+<h1>AngioTool 2.1 - Manual</h1>
+<h2>Fractal box-counting dimension</h2>
+<p>Single-image and batch analysis automatically measure the final vessel mask,
+after segmentation and optional cleanup. The Measurements sidebar shows Fractal
+dimension and fit R-squared. This calculation is independent of the Lacunarity
+and thickness options, and does not use the skeleton or overlay colors.</p>
+<p>Box sizes are 2, 4, 8, ... pixels, up to one quarter of the shorter processed
+image side. For each size, four grids offset by zero or half a box in each
+direction cover the full image, including partial edge boxes. The smallest
+occupied-box count is fitted against box size: dimension is the slope of
+log(count) versus log(1/size). At least four scales are required (shorter image
+side at least 64 pixels). Empty masks and undefined fits show N/A.</p>
+<p>XLSX appends dimension, R-squared, validity, reason, box sizes and counts.
+JSON also records the method and grid policy; unavailable numbers are null
+(blank in XLSX), never substituted with zero. Keep image resolution, field of
+view and segmentation settings consistent when comparing samples. Measurement
+unit conversion does not affect dimension; image resampling can. A high
+R-squared alone does not establish fractality or biological significance.</p>
+<h2>2.1 interface</h2>
+<p>The main workspace combines parameters on the left with image tabs and
+measurements on the right. Open image adds a tab, not a separate window.
+Each image tab can be closed independently. Analysis parameters are shared
+across the open images; zoom, pan and export paths belong to each image.</p>
+<p>Open image replaces View. Analysis, Color and Overlay tabs organize the
+parameters; Advanced cleanup expands the less frequently used mask settings.
+Enhancement scales (sigma) is the former Vessel Diameters list.</p>
+<p>Each image tab has a separate Measurements sidebar, fit-to-window and
+1:1 controls. Changing overlay style redraws the existing result without
+recomputing its measurements. Changes to input resizing reload the image.
+Save image still writes the result image, vessel-mask PNG and overlay-data JSON;
+Save XLSX writes the spreadsheet.</p>
+<p>Mean tree length and mean segment length are different metrics. Median
+diameter is the former Average Vessel Diameter. Area uses the vessel-mask
+convex hull, not an independently selected tissue ROI. Older terminology
+below is retained for compatibility with previous documentation.</p>
 
+<h3>Direct binary masks</h3>
+<p>Analysis &gt; Vessel detection &gt; Use binary mask directly accepts black
+background and white foreground masks (RGB 0/255 or 0/1). Other grayscale or
+colored pixels are rejected, rather than silently thresholded. Prefer lossless
+PNG or TIFF; JPEG and anti-aliased boundaries are generally not binary.</p>
+<p>This mode bypasses color transformation, Tubeness, intensity thresholds,
+morphological closing, advanced cleanup, and input resizing. Fill Holes and
+Remove Particles are optional and default off, with settings saved independently
+from Tubeness mode. Both use an equivalent radius in pixels: the area limit is
+pi times radius squared. Hole filling excludes border-connected background.
+With cleanup off, foreground pixels and existing holes are preserved. Skeletonizer, Max Skeleton Steps,
+measurement scaling and overlays remain available. For thick regions, compare
+with Max Skeleton Steps unchecked to allow thinning to finish.</p>
+<p>The setting applies to all open image tabs and batch analysis. Turn it off
+to return to Tubeness. Input Mode is recorded in XLSX and overlay-data JSON.
+The exported vessel-mask PNG can be used to verify the analyzed foreground.</p>
+<p>Each image has Original, Final mask and Skeleton overlay view buttons.
+Original shows input pixels at the analysis resolution. Final mask shows the
+foreground after cleanup. Switching views preserves pan and zoom and does not
+reanalyze. Save image and ImageJ submission still use the analysis overlay,
+regardless of the selected preview.</p>
 <h2>Table of Contents</h2>
 <ul>
   <li>About</li>
@@ -41,18 +102,22 @@ h3 {
 
 <section id="features">
   <h2>Features</h2>
-  <h3>View</h3>
-  <p>Analyze a single image in a new window. Changing the settings updates the preview in real time.</p>
+  <h3>Open image (formerly View)</h3>
+  <p>Analyze an image in a new tab within the main workspace. Analysis settings
+are shared by all open image tabs; each tab retains its own preview, zoom and pan.</p>
   <p>To use this feature:</p>
   <ol>
-    <li>Click the <i>'View'</i> button at the top of the main window.</li>
-    <li>Select an image to open. Once a selection is made, the analysis window will appear showing the resulting image.</li>
+    <li>Select the input mode, then click <i>'Open image'</i> at the top of the main window.</li>
+    <li>Select an image. A new image tab opens inside the main window.</li>
     <li>If desired, you may change the settings in the main window to update the preview.</li>
     <li>If desired, the image may be moved around the canvas using the <i>'Zoom'</i> and <i>'Move'</i> controls. You can also zoom by scrolling the mouse wheel over the canvas, and pan around by dragging the cursor over the canvas.</li>
-    <li>To save the processed image, click the folder button underneath <i>"Save result image"</i>. The output image will not be affected by any movement or zoom in the canvas.</li>
-    <li>To save the statistics to a spreadsheet, click the Excel button under <i>"Save stats to spreadsheet"</i>.</li>
+    <li>Compare <i>Original</i>, <i>Final mask</i> and <i>Skeleton overlay</i> using the view buttons. This does not reanalyze the image.</li>
+    <li>Click <i>Save image</i> to export the overlay and its mask/JSON files, regardless of the selected preview, pan or zoom.</li>
+    <li>Click <i>Save XLSX</i> to export statistics to a spreadsheet.</li>
   </ol>
-  <p>By default, the <i>"Display Stats"</i> checkbox is checked, which determines whether key statistics are visible in the top-left of the canvas. Regardless of whether <i>"Display Stats"</i> is checked, the stats will not be visible in the output image file.</p>
+  <p><i>Measurements</i> toggles the statistics sidebar. The sidebar is not included
+in exported images. Click an image tab title to switch images; its close button
+closes only that image.</p>
 
   <h3>Batch</h3>
   <p>
@@ -61,18 +126,22 @@ These folders are recursed fully, meaning that any image that belongs to any fol
 The same settings will be applied to every image, and the statistics of every scan will be saved to the provided Excel spreadsheet.
   </p>
   <p>To use this feature:</p>
+  <p>By default, the workbook is created in the first input folder and named
+  <i>result_&lt;input-folder-name&gt;.xlsx</i>. Its file name can be edited directly.
+  Uncheck <i>Create spreadsheet in first input folder</i> to choose another path
+  or append to an existing workbook.</p>
   <ol>
     <li>Click the 'Batch' button at the top of the main window.</li>
     <li>In the new window, click the <i>"Select input folders"</i> button. At least one folder containing images should be selected.</li>
-    <li>Click the <i>"Excel spreadsheet"</i> button. You may select an existing spreadsheet file, into which a new sheet will be added, or a new file.</li>
+    <li>Keep the automatic workbook option enabled and edit its file name if needed, or uncheck it and click <i>"Excel spreadsheet"</i> to choose another path or an existing workbook.</li>
     <li>Select the output image mode, out of:</li>
     <ul>
         <li>No output: no result images will be created</li>
-        <li>Same folders as inputs: each result image will be saved next to its corresponding input image</li>
+        <li>Create results folders next to inputs: a <code>results</code> folder will be created beside each set of input images, using names such as <code>ana_sample.tif</code></li>
         <li>Save result images to: select an existing or new folder under which all result images will be saved</li>
     </ul>
     <li>If <i>"Save result images to"</i> is selected, then click the adjacent folder button to select or create the folder.</li>
-    <li>If desired, you may change the result image format from TIFF by typing into the <i>"Result image format"</i> text box. You may enter any format from the following: TIFF, TIF, PNG, JPG, JPEG, GIF, BMP, PPM</li>
+    <li>When <i>"Save result images to"</i> is selected, enter an output format in the <i>"Result image format"</i> text box. You may enter TIFF, TIF, PNG, JPG, JPEG, GIF, BMP, or PPM. The <code>results</code>-folder mode preserves each source extension and uses PNG for extensionless sources.</li>
     <li>If desired, you may override the default job count. This refers to the number of concurrent jobs that may run at the same time. To achieve the highest throughput, the job count should match the number of cores on your computer's CPU. The program will display what this number is. The default job count is set to 3/4 of this number, which allows for other programs your device to run as normal.</li>
     <ul>
         <li>To override the job count, check the box next to <i>"Override job count"</i> and enter a new number into the text box.</li>
@@ -179,6 +248,14 @@ The default value is 25 steps, which means the skeletonizer will stop trying to 
 even if it could continue searching for the thinnest line. This value can be changed by typing in a new integer in the box.
   </p>
 
+  <h3>Merge nearby junctions</h3>
+  <p>
+This option combines junction regions only when they are directly connected by a
+skeleton segment no longer than the selected path distance. Nearby junctions on
+disconnected vessels are not combined. The default is enabled at 3 pixels. This
+changes the displayed and reported junction count without deleting mask or skeleton pixels.
+  </p>
+
   <h3>Transform Colors</h3>
   <p>
 This feature transforms colored images to have an acceptable grayscale profile so they can be properly analyzed by this software.
@@ -259,6 +336,17 @@ This will affect the output values of <i>'Explant Area'</i>, <i>'Vessels Area'</
 Check the checkbox to enable this feature. The default value is 100%, which means 1 pixel in the image has a length of 1mm.
 However, this can be altered by entering a percentage,
 for example if it is known that in a particular image 24 pixels is equivalent to 36mm, then a value of 150% should be entered.
+  </p>
+
+  <h3>Export normalized data</h3>
+  <p>
+This optional setting keeps all existing exports and adds image-relative results.
+Areas are divided by the analysis image area; lengths, diameters, and skeleton-pixel
+lengths are divided by the square root of that area. Topological counts remain unchanged.
+Saving a single result image adds a <i>normalized-data.json</i> file. Batch analysis adds
+an XLSX workbook with <i>_nor</i> before the extension, next to the original workbook.
+The setting is off by default and normalizes outputs only; it does not rescale detection,
+cleanup, pruning, or junction-merging parameters.
   </p>
 
   <h3>Vessel Diameters</h3>

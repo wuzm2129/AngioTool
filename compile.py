@@ -5,6 +5,14 @@ import sys
 import shutil
 import zipfile
 import subprocess
+import argparse
+
+parser = argparse.ArgumentParser(description="Build AngioTool without replacing the legacy JAR by default.")
+parser.add_argument("--output", default="AngioTool2.2.jar", help="Output JAR path")
+args = parser.parse_args()
+output_jar = os.path.abspath(args.output)
+if os.path.normcase(output_jar) == os.path.normcase(os.path.abspath("AngioTool2.jar")):
+    parser.error("AngioTool2.jar is preserved; choose another output filename.")
 
 JAVA = "java"
 JAVAC = "javac"
@@ -126,12 +134,7 @@ for root, dirs, files in os.walk("build"):
     for f in files:
         build_files.append(os.path.join(root, f))
 
-try:
-    os.remove("AngioTool2.jar")
-except:
-    pass
-
-with zipfile.ZipFile("AngioTool2.jar", compression=zipfile.ZIP_DEFLATED, compresslevel=6, mode="w") as zip:
+with zipfile.ZipFile(output_jar, compression=zipfile.ZIP_DEFLATED, compresslevel=6, mode="w") as zip:
     for f in asset_files:
         zip.write("source/" + f, arcname=f)
     for f in build_files:

@@ -9,6 +9,7 @@ public class NumberEntry
     public JCheckBox cb;
     public JLabel units;
     public JTextField tf;
+    public final JSpinner spinner;
 
     public String name;
     public final double originalValue;
@@ -24,17 +25,24 @@ public class NumberEntry
 
         units = new JLabel(unitsStr, SwingConstants.RIGHT);
 
-        tf = new JTextField();
-        tf.setText(Misc.formatDouble(value));
-        tf.setEnabled(enabled);
+        spinner = new JSpinner(new SpinnerNumberModel(value, null, null, 1.0));
+        JSpinner.NumberEditor editor = new JSpinner.NumberEditor(spinner, "0.########");
+        editor.getFormat().setDecimalFormatSymbols(
+            java.text.DecimalFormatSymbols.getInstance(java.util.Locale.ROOT));
+        editor.getFormat().setMaximumFractionDigits(340);
+        spinner.setEditor(editor);
+        tf = editor.getTextField();
+        spinner.setEnabled(enabled);
+        tf.getAccessibleContext().setAccessibleName(name);
+        spinner.getAccessibleContext().setAccessibleName(name);
 
         cb.setSelected(enabled);
     }
 
     public void update(boolean enabled, double value)
     {
-        tf.setText(Misc.formatDouble(value));
-        tf.setEnabled(enabled);
+        spinner.setValue(value);
+        spinner.setEnabled(enabled);
         cb.setSelected(enabled);
     }
 
@@ -42,10 +50,13 @@ public class NumberEntry
     {
         String str = tf.getText();
         try {
-            return Double.parseDouble(str);
+            double value = Double.parseDouble(str);
+            if (Double.isNaN(value) || Double.isInfinite(value))
+                throw new NumberFormatException();
+            return value;
         }
         catch (Exception ex) {
-            return originalValue;
+            throw new IllegalArgumentException(name + " Enter a valid number.");
         }
     }
 
@@ -72,8 +83,19 @@ public class NumberEntry
     public void toggleCheckbox()
     {
         boolean enabled = cb.isSelected();
-        double value = getValue();
-        tf.setText(Misc.formatDouble(value));
-        tf.setEnabled(enabled);
+        spinner.setEnabled(enabled);
+    }
+
+    public JPanel buildRow()
+    {
+        JPanel panel = new JPanel(new java.awt.BorderLayout(10, 0));
+        JPanel input = new JPanel(new java.awt.BorderLayout(6, 0));
+        spinner.setPreferredSize(UiTheme.size(105, 30));
+        input.add(spinner, java.awt.BorderLayout.CENTER);
+        input.add(units, "1 :".equals(units.getText()) ?
+            java.awt.BorderLayout.WEST : java.awt.BorderLayout.EAST);
+        panel.add(cb, java.awt.BorderLayout.CENTER);
+        panel.add(input, java.awt.BorderLayout.EAST);
+        return panel;
     }
 }

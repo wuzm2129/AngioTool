@@ -9,6 +9,7 @@ import java.text.DateFormat;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Arrays;
@@ -143,6 +144,10 @@ public class SpreadsheetWriter {
             Object value = values[off+i];
             if (value == null)
                 continue;
+            if (value instanceof Double && !Double.isFinite(((Double)value).doubleValue()))
+                continue;
+            if (value instanceof Float && !Float.isFinite(((Float)value).floatValue()))
+                continue;
 
             sb.add("<c r=\"");
             sb.add(makeColumnNumber(colNumber));
@@ -226,50 +231,28 @@ public class SpreadsheetWriter {
     }
 
     static String escapeXmlString(String input) {
-        ByteVectorOutputStream sb = new ByteVectorOutputStream();
-
-        byte[] bytes = input.getBytes();
-        int start = 0;
-        String esc = null;
-
-        for (int i = 0; i < bytes.length; i++) {
-            byte c = bytes[i];
-            switch (c) {
-                case '&':
-                    esc = "&amp;";
-                    break;
-                case '<':
-                    esc = "&lt;";
-                    break;
-                case '>':
-                    esc = "&gt;";
-                    break;
-                case '\'':
-                    esc = "&apos;";
-                    break;
-                case '"':
-                    esc = "&quot;";
-                    break;
+        StringBuilder sb = new StringBuilder(input.length());
+        for (int i = 0; i < input.length(); i++) {
+            char ch = input.charAt(i);
+            switch (ch) {
+                case '&': sb.append("&amp;"); break;
+                case '<': sb.append("&lt;"); break;
+                case '>': sb.append("&gt;"); break;
+                case '\'': sb.append("&apos;"); break;
+                case '"': sb.append("&quot;"); break;
                 default:
-                    esc = null;
-            }
-
-            if (esc != null) {
-                if (start < i)
-                    sb.add(bytes, start, i - start);
-                sb.add(esc);
-                start = i + 1;
+                    if (ch == '\t' || ch == '\n' || ch == '\r' || ch >= 0x20)
+                        sb.append(ch);
+                    else
+                        sb.append('\ufffd');
+                    break;
             }
         }
-
-        if (start < bytes.length)
-            sb.add(bytes, start, bytes.length - start);
-
         return sb.toString();
     }
 
     static String generateExcelUuid(String seed) {
-        byte[] seedBytes = seed.getBytes();
+        byte[] seedBytes = seed.getBytes(StandardCharsets.UTF_8);
         long hash1 = murmurHash64a(seedBytes, 0, seedBytes.length, 1337);
         long hash2 = murmurHash64a(seedBytes, 0, seedBytes.length, 420);
 
@@ -288,7 +271,8 @@ public class SpreadsheetWriter {
 
     static void writeStringBuilderToZip(ZipOutputStream zip, String path, StringBuilder sb) throws IOException {
         zip.putNextEntry(new ZipEntry(path));
-        zip.write(sb.toString().getBytes());
+        zip.write(sb.toString().getBytes(StandardCharsets.UTF_8));
+        zip.closeEntry();
     }
 
     static StringBuilder generateContentTypesXml(int sheetCount) {
@@ -579,7 +563,7 @@ public class SpreadsheetWriter {
         sb.append("\">");
 
         for (String str : uniqueStrings) {
-            sb.append("<si><t>");
+            sb.append("<si><t xml:space=\"preserve\">");
             sb.append(escapeXmlString(str));
             sb.append("</t></si>");
         }
@@ -611,7 +595,7 @@ public class SpreadsheetWriter {
             "<dimension ref=\"A1:"
         );
         sb.append(makeColumnNumber(sheet.colsInWidestRow));
-        sb.append(sheet.formattedRows.size + 1);
+        sb.append(Math.max(1, sheet.formattedRows.size));
         sb.append(
             "\"/>" +
             "<sheetViews>" +

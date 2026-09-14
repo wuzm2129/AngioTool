@@ -138,7 +138,7 @@ public class Lee94 {
         }
     }
 
-    public static void skeletonize(
+    public static boolean skeletonize(
         byte[] planes,
         ISliceRunner runner,
         int maxWorkers,
@@ -186,7 +186,7 @@ public class Lee94 {
             }
         } while (anyChanged && (maxSkelIterations <= 0 || ++step < maxSkelIterations));
 
-        params = null;
+        return !anyChanged;
     }
 
     static boolean thin(

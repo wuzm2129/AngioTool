@@ -256,6 +256,27 @@ public class Particles
         }
     }
 
+    public static void fillEnclosedHoles(Data data, int[] regions, byte[] image,
+        int width, int height, double radius)
+    {
+        boolean[] touchesBorder = new boolean[data.shapes.size / N_SHAPE_MEMBERS + 1];
+        for (int x = 0; x < width; x++) {
+            touchesBorder[regions[x]] = true;
+            touchesBorder[regions[x + width * (height - 1)]] = true;
+        }
+        for (int y = 0; y < height; y++) {
+            touchesBorder[regions[width * y]] = true;
+            touchesBorder[regions[width * y + width - 1]] = true;
+        }
+        double maxArea = Math.PI * radius * radius;
+        for (int i = 0; i < width * height; i++) {
+            int region = regions[i];
+            int shapeArea = data.shapes.buf[N_SHAPE_MEMBERS * (region - 1)];
+            if (shapeArea > 0 && shapeArea <= maxArea && !touchesBorder[region])
+                image[i] = (byte)255;
+        }
+    }
+
     public static void fillShapes(Data data, int[] regions, byte[] image, int width, int height, double maxSize, boolean lookingForWhite)
     {
         int maxPixelCount = (int)(3.14159 * maxSize * maxSize);
