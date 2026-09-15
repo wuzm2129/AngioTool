@@ -6,9 +6,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.text.DateFormat;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.Locale;
@@ -188,7 +187,8 @@ public class SpreadsheetWriter {
         ByteVectorOutputStream vector = new ByteVectorOutputStream();
         ZipOutputStream zip = new ZipOutputStream(vector);
 
-        String dateStr = LocalDateTime.now().atZone(ZoneId.of("GMT")).format(DateTimeFormatter.ISO_INSTANT);
+        // Excel rejects core-property W3CDTF timestamps with nanosecond precision.
+        String dateStr = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString();
 
         int sheetCount = sheets.size;
         for (int i = 0; i < sheetCount; i++) {

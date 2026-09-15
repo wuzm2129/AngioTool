@@ -34,12 +34,16 @@ public class SpreadsheetWriterCompatibilityTest
         try {
             String sharedStrings = readUtf8(zip, "xl/sharedStrings.xml");
             String worksheet = readUtf8(zip, "xl/worksheets/sheet1.xml");
+            String coreProperties = readUtf8(zip, "docProps/core.xml");
             if (!sharedStrings.contains("名称") || !sharedStrings.contains("图像&lt;&amp;&gt;&quot;路径&quot;"))
                 throw new AssertionError("UTF-8 or XML escaping was not preserved");
             if (!worksheet.contains("<dimension ref=\"A1:B2\"/>"))
                 throw new AssertionError("Worksheet dimension does not match actual rows");
             if (worksheet.contains("NaN") || worksheet.contains("Infinity"))
                 throw new AssertionError("Non-finite values must be blank cells");
+            if (!coreProperties.matches("(?s).*<dcterms:created[^>]*>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z</dcterms:created>.*") ||
+                !coreProperties.matches("(?s).*<dcterms:modified[^>]*>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z</dcterms:modified>.*"))
+                throw new AssertionError("Core-property timestamps must use Excel-compatible UTC whole seconds");
         }
         finally {
             zip.close();

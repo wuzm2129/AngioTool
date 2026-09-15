@@ -1,10 +1,12 @@
-# AngioTool 2.2
+# AngioTool 2.2.1
 
-## Local 2.2 Update (2026-09-13)
+## Local 2.2.1 Update (2026-09-15)
 
-This checkout builds AngioTool 2.2, a local extension of the upstream 2.0
+This checkout builds AngioTool 2.2.1, a local extension of the upstream 2.0
 batch edition. It keeps the original Tubeness analysis path and adds:
 
+- Excel-compatible XLSX metadata timestamps that no longer trigger workbook
+  repair when Batch results are opened in Microsoft Excel;
 - a single-window workspace with image tabs and Original, Final mask and
   Skeleton overlay previews;
 - direct binary-mask input with independent optional hole filling and particle
@@ -30,11 +32,11 @@ replaced with zero.
 Build and run locally with:
 
     python compile.py
-    java -jar AngioTool2.2.jar
+    java -jar AngioTool2.2.1.jar
 
-The build targets Java 8. Before each rebuild, preserve any existing legacy
-`AngioTool2.jar` in a unique timestamped backup and verify the copy, as required
-by [AGENTS.md](AGENTS.md).
+The build targets Java 8. Completed, verified versions are committed to Git with
+their versioned JAR; routine builds do not require timestamped JAR backups. The
+legacy `AngioTool2.jar` remains protected from accidental replacement.
 
 ![Single-window workspace](screenshots/ui-2.1/analysis.png)
 

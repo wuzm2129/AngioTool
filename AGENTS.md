@@ -6,13 +6,13 @@ AngioTool 2 is a Java 8 desktop application with experimental ImageJ plugin supp
 
 ## Build, Test, and Development Commands
 
-- `python compile.py` — requires Python 3 and a JDK (`java` and `javac` on `PATH`); expands `.tj` templates, compiles with `--release=8`, writes classes to `build/`, and creates `AngioTool2.jar`.
-- `java -jar AngioTool2.jar` — launches the standalone application after a successful build.
+- `python compile.py` — requires Python 3 and a JDK (`java` and `javac` on `PATH`); expands `.tj` templates, compiles with `--release=8`, writes classes to `build/`, and creates the current versioned JAR (currently `AngioTool2.2.1.jar`).
+- `java -jar AngioTool2.2.1.jar` — launches the current standalone application after a successful build.
 - `python buildexe.py <path-to-tcc>` — optionally builds native Windows launchers after `compile.py`; use only with the required TCC, MinGW resource compiler, and JDK JNI headers.
 
-## Build Artifact Backup Rule
+## Version and Build Artifact Rule
 
-Before every compilation or build verification that runs `python compile.py`, check whether `AngioTool2.jar` exists. If it does, copy it to a timestamped backup in the project root, using a name such as `AngioTool2-YYYYMMDD-HHMMSS-before-compile.jar`. Do not start compilation until the backup has succeeded, and report the resulting backup path. Never overwrite an existing backup.
+Use Git history instead of timestamped pre-compilation JAR backups. Do not create a backup solely because `python compile.py` will run. Give each completed release a new versioned JAR name, such as `AngioTool2.2.1.jar`, and after its build and relevant verification succeed, commit the focused source, documentation, tests, and versioned JAR together. Preserve unrelated work and never overwrite the legacy `AngioTool2.jar` unless the user explicitly requests it.
 
 ## Coding Style & Naming Conventions
 

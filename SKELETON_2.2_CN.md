@@ -1,6 +1,6 @@
-# AngioTool 2.2 使用与验证说明
+# AngioTool 2.2.1 使用与验证说明
 
-本版文件：AngioTool2.2.jar。原 AngioTool2.jar 保留，构建脚本默认输出新版本且拒绝以原包名称为输出。
+本版文件：AngioTool2.2.1.jar。原 AngioTool2.jar 保留，构建脚本默认输出新版本且拒绝以原包名称为输出。
 
 ## 新功能
 
