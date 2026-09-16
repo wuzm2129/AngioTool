@@ -1,10 +1,14 @@
-# AngioTool 2.1 UI 现代化
+# AngioTool 2.2.2 UI 现代化记录
 
 日期：2026-09-07
 
+当前发布版：AngioTool 2.2.2。本文主体记录 2026-09-07 的 UI 改造，旧截图和验证产物按历史资料保留。
+
+2.2.2 修正了 8 邻域转角产生的单像素内部连接被误计为 junction 外部支路的问题；受影响图像需用新版本重新计算 junction 数量和 junction density。最新测试结果及边界见 [当前验证记录](VALIDATION_CN.md)。
+
 ## 范围
 
-本轮在现有 2.1 修复副本上改造 Swing 界面，保留此前未提交的算法、输出路径和 JSON 修复。初始 UI 改造未改变计算实现；后续按用户要求增加直接二值掩膜输入分支，默认 Tubeness 路径保持不变。参数和图像合并成单窗口工作台，多张图像通过标签切换。保留统一参数及实验性 ImageJ 插件入口。
+本轮在 `D:\CodeProject\AngioTool 2.1` 修复副本上完成的 UI 改造现随 2.2.2 发布。改造保留此前的算法、输出路径和 JSON 修复；初始 UI 改造未改变计算实现，后续增加直接二值掩膜输入分支。参数和图像合并成单窗口工作台，多张图像通过标签切换。保留统一参数及实验性 ImageJ 插件入口。
 
 ## 界面
 
@@ -48,26 +52,26 @@ Apache 2.0 许可全文保存在 `source/META-INF/licenses/flatlaf-LICENSE.txt`�
 
 ## 验证
 
-编译前必须备份当前 JAR。随后运行：
+以下是按当前版本更新的验证命令示例；发布产物命名为 `AngioTool2.2.2.jar`，版本追踪和回退使用 Git 历史。
 
 ```powershell
-python compile.py
-javac --release=8 -cp AngioTool2.jar -d build benchmarks/AngioTool/UiSmokeTest.java benchmarks/AngioTool/MetricsParityTest.java benchmarks/AngioTool/AnalysisRegressionTest.java benchmarks/AngioTool/BatchOutputPathTest.java benchmarks/AngioTool/BinaryMaskTest.java benchmarks/AngioTool/FileChooserFontTest.java
-java -cp "AngioTool2.jar;build" AngioTool.BinaryMaskTest
-java -cp "AngioTool2.jar;build" AngioTool.FileChooserFontTest
-java -cp "AngioTool2.jar;build" AngioTool.UiSmokeTest
-java "-Dflatlaf.uiScale=1.5" -cp "AngioTool2.jar;build" AngioTool.UiSmokeTest screenshots/ui-2.1-150
-java -cp "AngioTool2.jar;build" benchmarks.AngioTool.AnalysisRegressionTest
-java -cp "AngioTool2.jar;build" AngioTool.BatchOutputPathTest source/deprecated/images/ImageExample.png
+python .\compile.py
+javac --release=8 -cp AngioTool2.2.2.jar -d build benchmarks/AngioTool/UiSmokeTest.java benchmarks/AngioTool/MetricsParityTest.java benchmarks/AngioTool/AnalysisRegressionTest.java benchmarks/AngioTool/BatchOutputPathTest.java benchmarks/AngioTool/BinaryMaskTest.java benchmarks/AngioTool/FileChooserFontTest.java
+java -cp "AngioTool2.2.2.jar;build" AngioTool.BinaryMaskTest
+java -cp "AngioTool2.2.2.jar;build" AngioTool.FileChooserFontTest
+java -cp "AngioTool2.2.2.jar;build" AngioTool.UiSmokeTest verification/ui-recheck
+java "-Dflatlaf.uiScale=1.5" -cp "AngioTool2.2.2.jar;build" AngioTool.UiSmokeTest verification/ui-recheck-150
+java -cp "AngioTool2.2.2.jar;build" benchmarks.AngioTool.AnalysisRegressionTest
+java -cp "AngioTool2.2.2.jar;build" AngioTool.BatchOutputPathTest source/deprecated/images/ImageExample.png
 ```
 
 `UiSmokeTest` 使用单独的临时 `user.home`，不读写真实用户偏好；保留临时导出目录供检查。其检查包括默认值映射、折叠区域、嵌套控件、输入校验、统计侧栏、样式修改保留 mask 和统计、查看控制、四类导出、连续调参及计算中关闭标签。多图检查确认两张图像嵌入同一个主窗口、切换时保留查看状态、关闭其中一张不影响另一张、最后关闭后恢复空工作区。
 
 `MetricsParityTest` 可分别在旧/新 JAR 类路径下运行，逐行比较所有 `Analyzer.Stats` 字段及 mask 哈希。UI 冒烟截图由实际 Swing 窗口绘制生成，不是设计稿。
 
-已通过：编译、常规及 150% UI 冒烟、算法回归、批处理及示例图像旧/新指标对照。常规截图在 `screenshots/ui-2.1`，150% 截图在 `screenshots/ui-2.1-150`。
+历史验证记录：当时已通过编译、常规及 150% UI 冒烟、算法回归、批处理及示例图像旧/新指标对照。该记录不是本轮复测结果；常规截图在 `screenshots/ui-2.1`，150% 截图在 `screenshots/ui-2.1-150`。
 
-最终主 JAR 的 SHA-256：
+该历史阶段主 JAR 的 SHA-256（当前发布包见 `VALIDATION_CN.md`）：
 
 ```text
 8d4baf096d421081a19ac172b8eaa19b09aad15bed765b3bd9ad0fbf8a5b3fec
@@ -79,12 +83,12 @@ java -cp "AngioTool2.jar;build" AngioTool.BatchOutputPathTest source/deprecated/
 
 主题先前固定使用物理字体 `Segoe UI`，在本机缺少中文字形，导致文件选择器的中文标签和目录名显示为方框。已改为 Java 逻辑字体 `Dialog`，保留字号和 DPI 缩放，并使用平台字形回退。文件选择、引号路径兼容和分析逻辑均未改变。
 
-新增 `benchmarks/AngioTool/FileChooserFontTest.java`，在隔离的临时用户目录和简体中文区域设置下，验证中文图像、多个中文目录、中文 XLSX 保存路径及普通/粗体/斜体字形。修改前已复现缺字断言失败，修改后常规和 150% 测试均通过：
+新增 `benchmarks/AngioTool/FileChooserFontTest.java`，在隔离的临时用户目录和简体中文区域设置下，验证中文图像、多个中文目录、中文 XLSX 保存路径及普通/粗体/斜体字形。修改前已复现缺字断言失败，修改后常规和 150% 测试均通过（历史记录）：
 
 ```powershell
-javac --release=8 -cp AngioTool2.jar -d build benchmarks/AngioTool/FileChooserFontTest.java
-java -cp "AngioTool2.jar;build" AngioTool.FileChooserFontTest
-java "-Dflatlaf.uiScale=1.5" -cp "AngioTool2.jar;build" AngioTool.FileChooserFontTest screenshots/file-chooser-font-150
+javac --release=8 -cp AngioTool2.2.2.jar -d build benchmarks/AngioTool/FileChooserFontTest.java
+java -cp "AngioTool2.2.2.jar;build" AngioTool.FileChooserFontTest
+java "-Dflatlaf.uiScale=1.5" -cp "AngioTool2.2.2.jar;build" AngioTool.FileChooserFontTest screenshots/file-chooser-font-150
 ```
 
 同时重新通过常规和 150% `UiSmokeTest`、`AnalysisRegressionTest` 和 `BatchOutputPathTest`。实际 Swing 绘制截图位于 `screenshots/file-chooser-font` 和 `screenshots/file-chooser-font-150`；修复前截图位于 `screenshots/file-chooser-font-before`。
@@ -130,11 +134,11 @@ java "-Dflatlaf.uiScale=1.5" -cp "AngioTool2.jar;build" AngioTool.FileChooserFon
 
 2026-09-07：同步 [README](readme.md)、[中文使用指南](USER_GUIDE_CN.md)、[程序报告](PROGRAM_REPORT_CN.md)、[导出格式](OVERLAY_EXPORT_FORMAT_CN.md) 和 [英文手册源码](source/manual.html)。正文现在区分普通增强与直接掩膜两条路径，说明独立清理、边界保护、视图归属及导出不受预览影响；README 保留上游 2.0 背景，但明确与本地 2.1 区分。
 
-本次文档同步未修改 Java 源码、未重新编译或覆盖 JAR；上方测试结果属于前一轮功能构建。英文手册源码中的旧窗口操作说明已修订，需下次按备份规则构建后才进入 JAR 内置帮助。文档验证限于相对文件链接、JSON 示例/字段核对和差异空白检查。
+本次文档同步未修改 Java 源码、未重新编译或覆盖 JAR；上方测试结果属于前一轮功能构建，不能视为本轮复测。英文手册源码中的旧窗口操作说明已修订，需重新构建后才进入 JAR 内置帮助。文档验证限于相对文件链接、JSON 示例/字段核对和差异空白检查。
 
-## 本轮编译备份
+## 历史构建备份记录
 
-以下文件均在项目根目录，复制时禁止覆盖，并通过原文件/备份 SHA-256 一致性检查：
+以下文件是历史 UI 修复阶段的本地产物，保留名称仅供追溯；当前不要求为每次编译创建时间戳 JAR 备份：
 
 ```text
 AngioTool2-20260907-142134-126-before-compile.jar
@@ -154,8 +158,8 @@ AngioTool2-20260907-153058-654-before-compile.jar
 
 ## 回退与限制
 
-- UI 改造前的可运行包：`AngioTool2-20260907-142134-126-before-compile.jar`，已与编译前主 JAR 做 SHA-256 校验。可直接运行此备份，不需要覆盖新包。
-- 后续编译另有时间戳备份，不应将中间 UI 版本误认为改造前版本。
+- UI 改造前的历史可运行包：`AngioTool2-20260907-142134-126-before-compile.jar`，已与当时编译前主 JAR 做 SHA-256 校验。
+- 历史阶段的后续编译曾有时间戳备份，不应将中间 UI 版本误认为改造前版本；当前回退以 Git 历史为准。
 - 源码回退仅限本轮 UI 差异，不能对整个工作区执行 reset；目录内有此前未提交的修复。
 - 原版与 2.1 仍使用 `%USERPROFILE%\AngioTool2` 偏好目录。本轮保留兼容性，未擅自迁移真实配置。
 - 验证环境为本机 JDK 21，目标字节码 Java 8；未单独在 Java 8 运行时或真实 ImageJ/Fiji 宿主中测试。

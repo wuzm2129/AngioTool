@@ -6,13 +6,13 @@ AngioTool 2 is a Java 8 desktop application with experimental ImageJ plugin supp
 
 ## Build, Test, and Development Commands
 
-- `python compile.py` — requires Python 3 and a JDK (`java` and `javac` on `PATH`); expands `.tj` templates, compiles with `--release=8`, writes classes to `build/`, and creates the current versioned JAR (currently `AngioTool2.2.1.jar`).
-- `java -jar AngioTool2.2.1.jar` — launches the current standalone application after a successful build.
-- `python buildexe.py <path-to-tcc>` — optionally builds native Windows launchers after `compile.py`; use only with the required TCC, MinGW resource compiler, and JDK JNI headers.
+- `python compile.py` — requires Python 3 and a JDK (`java` and `javac` on `PATH`); expands `.tj` templates, compiles with `--release=8`, writes classes to `build/`, and creates the current versioned JAR (currently `AngioTool2.2.2.jar`).
+- `java -jar AngioTool2.2.2.jar` — launches the current standalone application after a successful build.
+- `python buildexe.py <path-to-tcc>` — legacy native Windows launcher build; it still reads `AngioTool2.jar` and is not adapted to current versioned JARs. Do not use it to package the current release without updating that workflow. It requires TCC, MinGW resource compiler, and JDK JNI headers.
 
 ## Version and Build Artifact Rule
 
-Use Git history instead of timestamped pre-compilation JAR backups. Do not create a backup solely because `python compile.py` will run. Give each completed release a new versioned JAR name, such as `AngioTool2.2.1.jar`, and after its build and relevant verification succeed, commit the focused source, documentation, tests, and versioned JAR together. Preserve unrelated work and never overwrite the legacy `AngioTool2.jar` unless the user explicitly requests it.
+Use Git history instead of timestamped pre-compilation JAR backups. Do not create a backup solely because `python compile.py` will run. Give each completed release a new versioned JAR name, such as `AngioTool2.2.2.jar`, and after its build and relevant verification succeed, commit the focused source, documentation, tests, and versioned JAR together. Preserve unrelated work and never overwrite the legacy `AngioTool2.jar` unless the user explicitly requests it.
 
 ## Coding Style & Naming Conventions
 
@@ -21,6 +21,8 @@ Use four-space indentation, braces on the next line for classes and methods, and
 ## Testing Guidelines
 
 No JUnit suite or coverage threshold is configured. Treat `python compile.py` as the baseline compile check, then smoke-test the JAR with representative images and any affected ImageJ/plugin path. For performance-sensitive changes, compile and run a targeted benchmark, for example `javac -d build benchmarks/FiltersBenchmark.java` followed by `java -cp build FiltersBenchmark`.
+
+Run `python benchmarks/run_regression.py` to build an isolated verification JAR and execute the headless regression suite, or `python benchmarks/run_regression.py --jar AngioTool2.2.2.jar` to test a release artifact. Logs and generated fixtures are saved under `verification/regression-*`; see `VALIDATION_CN.md` for coverage and limits.
 
 ## Analysis Pipeline & Metrics
 

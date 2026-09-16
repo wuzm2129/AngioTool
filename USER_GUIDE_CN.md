@@ -1,14 +1,16 @@
-# AngioTool 2.1 中文完整使用指南
+# AngioTool 2.2.2 中文完整使用指南
 
 > **2026-09-12：新增分形维数。** 分析完成后，Measurements 自动显示最终血管掩膜的 `Fractal dimension` 与拟合 R²；单图/批量 Excel 追加维数、R²、有效性、原因、盒子尺寸和计数六列。JSON 保存完整方法参数。无需启用 Lacunarity；小图或空图可能显示 N/A。方法、比较条件和解释边界见 [盒计数分形维数说明](FRACTAL_BOX_COUNT_CN.md)。
 
 > **2026-09-07 UI 更新**：程序已改为单窗口工作台，左侧是 Analysis、Color、Overlay 参数页，右侧是图像标签与 Measurements 统计。Open image（原 View）打开新标签，不再弹出独立分析窗口；标签右侧 × 关闭对应图像。各图像共用分析参数，分别保留缩放、平移及导出路径。Reset defaults、Save image / Save XLSX 对应原恢复默认值和保存操作。下文“分析窗口”应理解为主窗口内的图像分析区。完整变更与验证见 [UI_MODERNIZATION_CN.md](UI_MODERNIZATION_CN.md)。
 
-> 适用版本：AngioTool 2.1 修复副本<br>
-> 核对日期：2026-09-07<br>
-> 适用范围：独立 JAR、批处理和实验性 ImageJ 插件
+> 适用版本：AngioTool 2.2.2<br>
+> 核对日期：2026-09-16<br>
+> 适用范围：独立 JAR、批处理和实验性 ImageJ 插件；本轮只交付独立 JAR，EXE 构建脚本尚未适配版本化 JAR
 
 AngioTool 2.0 用于从眼科、血管生成或其他二维血管图像中提取血管区域、骨架和拓扑统计。它可以交互分析单张图像，也可以用同一组参数递归处理一批图像。
+
+当前 2.2.2 修正了 8 邻域转角产生的单像素内部连接被误计为 junction 外部支路的问题。受影响图像应使用 2.2.2 重新计算 junction 数量和 junction density；最新测试结果及边界见 [当前验证记录](VALIDATION_CN.md)。
 
 本指南根据当前程序架构和实际代码路径编写。它说明软件如何操作、每个参数实际影响哪个分析阶段、结果文件如何解释，以及如何保证不同样本之间的结果可比较。
 
@@ -95,10 +97,10 @@ java -version
 推荐使用独立模式：
 
 ```powershell
-java -jar .\AngioTool2.jar
+java -jar .\AngioTool2.2.2.jar
 ```
 
-在 Windows 中也可以双击 `AngioTool2.jar`，或右键选择 Java Runtime 打开。如果双击没有反应，优先用终端命令启动，以便看到错误信息。
+在 Windows 中也可以双击 `AngioTool2.2.2.jar`，或右键选择 Java Runtime 打开。如果双击没有反应，优先用终端命令启动，以便看到错误信息。
 
 ### 2.3 支持的图像格式
 
@@ -719,7 +721,7 @@ JSON 的 `uiParameters` 是最完整的参数快照；仅保存截图不足以�
 ### 13.1 JAR 无法启动
 
 1. 在终端运行 `java -version`。
-2. 使用 `java -jar .\AngioTool2.jar` 启动并查看报错。
+2. 使用 `java -jar .\AngioTool2.2.2.jar` 启动并查看报错。
 3. 确认下载的是完整 JAR，不是网页或损坏文件。
 4. 确认 Java 架构和系统环境正常。
 
@@ -789,7 +791,7 @@ ImageJ 支持是实验性的，独立 JAR 仍是推荐路径。
 
 ### 14.1 安装与打开
 
-1. 把包含 `plugins.config` 的 `AngioTool2.jar` 放入 ImageJ/Fiji 的插件目录。
+1. 把包含 `plugins.config` 的 `AngioTool2.2.2.jar` 放入 ImageJ/Fiji 的插件目录。
 2. 重启 ImageJ/Fiji。
 3. 打开一张图像。
 4. 从插件菜单选择 `AngioTool2`。
@@ -818,19 +820,13 @@ ImageJ 支持是实验性的，独立 JAR 仍是推荐路径。
 - JDK，且 `java`、`javac` 位于 `PATH`。
 - Java 编译器支持 `--release=8`。
 
-### 15.2 强制备份规则
+### 15.2 当前发布产物与版本追踪
 
-每次运行 `python compile.py` 前，必须先检查项目根目录是否已有 `AngioTool2.jar`。如果存在，应把它复制为唯一时间戳备份，例如：
-
-```text
-AngioTool2-YYYYMMDD-HHMMSS-before-compile.jar
-```
-
-备份失败时不得开始编译，也不得覆盖已有备份。
+当前发布版为 2.2.2。`compile.py` 会生成 `AngioTool2.2.2.jar`；源码和发布 JAR 应按项目约定一起纳入 Git 版本管理。回退使用 Git 历史，不要求为每次编译创建时间戳 JAR 备份。
 
 ### 15.3 编译
 
-完成备份后，在项目根目录运行：
+在项目根目录运行：
 
 ```powershell
 python .\compile.py
@@ -842,12 +838,12 @@ python .\compile.py
 2. 展开 `source/Utils/*.tj` 模板。
 3. 删除并重建 `build/`。
 4. 使用 `javac --release=8` 编译非 deprecated 源码和 ImageJ stubs。
-5. 打包资源、class、lookup table 和 `plugins.config` 到 `AngioTool2.jar`。
+5. 打包资源、class、lookup table 和 `plugins.config` 到 `AngioTool2.2.2.jar`。
 
 编译成功后启动：
 
 ```powershell
-java -jar .\AngioTool2.jar
+java -jar .\AngioTool2.2.2.jar
 ```
 
 项目没有 JUnit 自动测试套件。最低验证应包括：
@@ -897,15 +893,15 @@ java -jar .\AngioTool2.jar
 ---
 
 使用 AngioTool 得到可信结果的核心原则是：先验证二值 mask，再验证骨架和 junction，最后解释统计值；同一研究中始终固定图像采集、缩放、分割、骨架和标定参数。
-# AngioTool 2.1 使用与结果解释说明
+## 历史记录：AngioTool 2.1 使用与结果解释说明（2026-09-07）
 
 更新时间：2026-09-07
 
 ## 版本状态
 
-本目录是 AngioTool 2.1 的独立修复版本。原版目录 `D:\CodeProject\AngioTool` 保持不变。
+以下内容是 2.1 修复阶段的历史记录，不覆盖本指南前文对当前 2.2.2 的说明。原版目录 `D:\CodeProject\AngioTool` 保持不变。
 
-2.1 当前优先修复了空结果、异常尺寸、指标命名和结果追踪问题。图像分析方法本身仍继承原有 Java 实现，因此正式实验前仍应检查二值 mask、骨架和 junction 是否符合肉眼观察。
+2.1 阶段曾优先修复空结果、异常尺寸、指标命名和结果追踪问题。相关历史背景仍可参考，但正式实验应以当前 2.2.2 程序和前文说明为准。
 
 ## 结果有效性
 
@@ -969,14 +965,14 @@ JSON 会记录：
 7. 固定 Skeletonizer、最大迭代步数和测量尺度。
 8. 在同一实验中使用一致的参数和图像采集条件。
 
-## 回归测试
+## 历史回归测试记录
 
 ```powershell
 javac -cp build -d build benchmarks\AngioTool\AnalysisRegressionTest.java
 java -cp build benchmarks.AngioTool.AnalysisRegressionTest
 ```
 
-通过标志：
+当时记录的通过标志（不是本轮复测结果）：
 
 ```text
 AnalysisRegressionTest: PASS

@@ -25,7 +25,21 @@ h3 {
 </style>
 </head>
 <body>
-<h1>AngioTool 2.1 - Manual</h1>
+<h1>AngioTool 2.2.2 - Manual</h1>
+<h2>Skeleton measurements in 2.2.2</h2>
+<p>A single-pixel connection whose two neighbors belong to the same junction
+region is no longer counted as an external branch. This prevents an L-shaped
+raster corner from being reported as a three-way junction. Junction counts,
+density and markers may change; vessel masks and skeleton lengths are unchanged
+by this correction. Recompute affected results with one consistent version.</p>
+<p>Prune terminal branches removes short endpoint-to-junction paths in one pass
+after skeletonization has converged. The default threshold is 3 analysis pixels,
+including diagonal distances, independent of Measurement Scale. Raw skeleton
+shows the result before pruning. If Max Skeleton Steps is reached before
+convergence, pruning is skipped and the status is recorded in measurements and
+exports. Merge nearby junctions also defaults to 3 pixels and requires a direct
+skeleton connection. Validate these thresholds on your images before interpreting
+short branches as artifacts.</p>
 <h2>Fractal box-counting dimension</h2>
 <p>Single-image and batch analysis automatically measure the final vessel mask,
 after segmentation and optional cleanup. The Measurements sidebar shows Fractal

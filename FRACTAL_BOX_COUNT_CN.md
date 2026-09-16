@@ -70,7 +70,9 @@ Excel 在既有列末尾追加六列，原列顺序保持不变：
 - `StatisticsPanel`、`OverlayDataExporter`：界面和 JSON 展示；单图 XLSX 位于 Analyzer，批量 Results 表位于 BatchProcessing，二者均追加相同六列并复用值格式函数。
 - 合成测试覆盖直线、实心方块、Sierpinski carpet、空图、小图、恒定计数、非整倍尺寸及边界盒计数，并用独立计数方法交叉核对。
 - 集成验证覆盖处理模式、比例尺、清理后掩膜、结果复用、单图与批量输出以及界面。
-- 运行构建前备份现有 JAR，保留现有用户修改。最终实际执行的验证结果另记于本文件，未执行项目不视为通过。
+- 当前发布产物为 `AngioTool2.2.2.jar`；源码和发布 JAR 按 Git 版本管理。2.2.1 阶段的 XLSX 修复属于历史记录。以下带日期的验证记录属于当时实际执行的历史记录，未执行项目不视为通过。
+
+2.2.2 还修正了 8 邻域转角产生的单像素内部连接被误计为 junction 外部支路的问题；受影响图像需用新版本重新计算 junction 数量和 junction density。最新测试结果及边界见 [当前验证记录](VALIDATION_CN.md)。
 
 ### 2026-09-12 实际验证记录
 
@@ -87,7 +89,7 @@ Excel 在既有列末尾追加六列，原列顺序保持不变：
 | ImageJ 1.54q 参考对照 | 通过；实际调用 ImageJ `FractalBoxCounter.count` 和 `CurveFitter`，统一前景、完整图像范围、尺度和四个网格位置，方块/项目示例计数完全一致，D 和 R² 差异小于 1e-10 |
 | 原有 `AnalysisRegressionTest`、`BinaryMaskTest` | 通过 |
 | `UiSmokeTest` 普通及 150% 缩放 | 均通过，并检查截图；侧栏下方指标可通过滚动查看 |
-| 备份 JAR 与新 JAR 示例图对照 | 全部既有 Stats 字段及最终 mask 哈希一致；mask 哈希为 1407611904 |
+| 历史备份 JAR 与当时新 JAR 示例图对照 | 全部既有 Stats 字段及最终 mask 哈希一致；mask 哈希为 1407611904 |
 | `git diff --check` | 通过 |
 
 项目自带示例图在默认分析参数下得到 D=1.7500246487569238。该示例包含自身图像内容和边缘信息，仅用于实现对照，不作生物学验证数据。
@@ -96,19 +98,19 @@ ImageJ 对照没有调用其默认的自动前景裁剪或交互绘图，而是�
 
 仅对盒计数新增部分计时，每种情况预热一次、测量三次取中位数：1024×1024 稀疏分支图 21.93 ms、实心图 65.75 ms；2048×2048 稀疏分支图 94.60 ms、实心图 387.74 ms。耗时依赖图像占据率和机器负载，不代表完整分析耗时。
 
-构建前备份（已验证与原 JAR 哈希一致）和新 JAR 均是本机验证时的本地产物；备份只覆盖可执行产物，不用于撤销源码中的既有修改。
+历史构建前备份（已验证与当时原 JAR 哈希一致）和新 JAR 均是本机验证时的本地产物；它们不替代 Git 版本追踪，也不是当前发布依赖。
 
 本轮未在 Java 8 实际运行时或真实 Fiji 插件宿主内验证，也没有开展标注数据集的科学准确性评估。
 
 ### 复现测试
 
-先按 AGENTS.md 备份现有 JAR 并完成构建，再编译测试。类路径须包括 JAR，因为 Lee94 查找表等资源打包在 JAR 内；仅使用 `build` 会缺少资源。
+先完成构建，再编译测试。类路径须包括当前 JAR，因为 Lee94 查找表等资源打包在 JAR 内；仅使用 `build` 会缺少资源。
 
 ```powershell
 $testSources = @(Get-ChildItem benchmarks/AngioTool -Filter '*.java' | ForEach-Object { $_.FullName })
-javac --release=8 -cp AngioTool2.jar -d build $testSources
-java '-Djava.awt.headless=true' -cp 'AngioTool2.jar;build' AngioTool.FractalBoxCountTest --benchmark
-java '-Djava.awt.headless=true' -cp 'AngioTool2.jar;build' AngioTool.FractalIntegrationTest verification/fractal-recheck
+javac --release=8 -cp AngioTool2.2.2.jar -d build $testSources
+java '-Djava.awt.headless=true' -cp 'AngioTool2.2.2.jar;build' AngioTool.FractalBoxCountTest --benchmark
+java '-Djava.awt.headless=true' -cp 'AngioTool2.2.2.jar;build' AngioTool.FractalIntegrationTest verification/fractal-recheck
 python benchmarks/AngioTool/verify_fractal_exports.py verification/fractal-recheck
 ```
 

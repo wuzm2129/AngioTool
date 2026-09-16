@@ -1,10 +1,12 @@
-# AngioTool 2.2.1
+# AngioTool 2.2.2
 
-## Local 2.2.1 Update (2026-09-15)
+## Local 2.2.2 Update (2026-09-16)
 
-This checkout builds AngioTool 2.2.1, a local extension of the upstream 2.0
+This checkout builds AngioTool 2.2.2, a local extension of the upstream 2.0
 batch edition. It keeps the original Tubeness analysis path and adds:
 
+- corrected junction counting at raster corners: a one-pixel connection inside
+  the same junction region no longer counts as an external branch;
 - Excel-compatible XLSX metadata timestamps that no longer trigger workbook
   repair when Batch results are opened in Microsoft Excel;
 - a single-window workspace with image tabs and Original, Final mask and
@@ -26,17 +28,27 @@ replaced with zero.
 - [Export format](OVERLAY_EXPORT_FORMAT_CN.md): mask, JSON and input-mode metadata.
 - [Fractal box-counting guide](FRACTAL_BOX_COUNT_CN.md): method and interpretation.
 - [Skeleton 2.2 guide](SKELETON_2.2_CN.md): pruning, junction merging and verification.
+- [Current validation](VALIDATION_CN.md): reproducible tests, release evidence and remaining limits.
 - [UI changes and verification](UI_MODERNIZATION_CN.md): screenshots, tests and backups.
 - [English manual](source/manual.html).
 
 Build and run locally with:
 
     python compile.py
-    java -jar AngioTool2.2.1.jar
+    java -jar AngioTool2.2.2.jar
 
 The build targets Java 8. Completed, verified versions are committed to Git with
 their versioned JAR; routine builds do not require timestamped JAR backups. The
 legacy `AngioTool2.jar` remains protected from accidental replacement.
+
+Run the headless regression suite against the release artifact with:
+
+    python benchmarks/run_regression.py --jar AngioTool2.2.2.jar
+
+Omit `--jar` to build and test an isolated verification JAR. Logs, synthetic
+exports and a JSON summary are saved under `verification/regression-*`.
+Recompute junction counts and densities for affected images when moving from
+2.2.1 to 2.2.2; keep software versions consistent within a comparison.
 
 ![Single-window workspace](screenshots/ui-2.1/analysis.png)
 

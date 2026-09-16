@@ -709,7 +709,8 @@ public class AnalyzeSkeleton2
         }
         // A non-junction path has degree <= 2. Count its contacts with junction
         // regions, not the number of adjacent junction pixels. A returning path
-        // contributes two contacts; a one-pixel raster shortcut contributes one.
+        // contributes two contacts. A slab pixel whose two neighbors are in the
+        // same region is an internal raster shortcut, not an external branch.
         int[] contacts = new int[26];
         for (IntVector points : new IntVector[] {result.endPoints, result.slabVoxels}) {
             for (int i = 0; i < points.size; i += 3) {
@@ -717,6 +718,7 @@ public class AnalyzeSkeleton2
                 int y = points.buf[i + 1];
                 int z = points.buf[i + 2];
                 int nContacts = 0;
+                int nJunctionNeighbors = 0;
                 for (int dz = -1; dz <= 1; dz++) {
                     for (int dy = -1; dy <= 1; dy++) {
                         for (int dx = -1; dx <= 1; dx++) {
@@ -727,6 +729,7 @@ public class AnalyzeSkeleton2
                             int id = scratch.junctionVertexMap[xx + width * yy + area * zz];
                             if (id == 0)
                                 continue;
+                            nJunctionNeighbors++;
                             id = findRoot(parent, id);
                             boolean seen = false;
                             for (int c = 0; c < nContacts; c++)
@@ -736,6 +739,8 @@ public class AnalyzeSkeleton2
                         }
                     }
                 }
+                if (points == result.slabVoxels && nContacts == 1 && nJunctionNeighbors == 2)
+                    continue;
                 for (int c = 0; c < nContacts; c++)
                     degree[contacts[c]]++;
             }
