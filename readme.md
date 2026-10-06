@@ -70,6 +70,7 @@ replaced with zero.
 - [Fractal box-counting guide](FRACTAL_BOX_COUNT_CN.md): method and interpretation.
 - [Skeleton 2.2 guide](SKELETON_2.2_CN.md): pruning, junction merging and verification.
 - [Current validation](VALIDATION_CN.md): reproducible tests, release evidence and remaining limits.
+- [Build artifact retention](BUILD_ARTIFACTS_CN.md): retained releases, cleanup and Git recovery.
 - [UI changes and verification](UI_MODERNIZATION_CN.md): screenshots, tests and backups.
 - [English manual](source/manual.html).
 
