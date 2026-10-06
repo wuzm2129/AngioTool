@@ -1,4 +1,16 @@
-# AngioTool 2.2.2 UI 现代化记录
+# AngioTool 2.2.3 UI 现代化记录
+
+## 2026-10-06：2.2.3 正式版本
+
+本版将 preview5 的 JSON 参数导入、自动/手动应用、独立 Measurements 第三栏与免确认参数操作纳入正式版本。新增参数导入回归与真实界面操作检查，旧版统计栏隐藏检查更新为独立第三栏的显示/挂载检查。实际验证记录与边界见 [VALIDATION_CN.md](VALIDATION_CN.md)。正式包已通过普通及 150% 缩放 GUI 烟测。高 DPI/较窄窗口先缩小图像区，保留指标栏宽度；图像视图按钮在窄栏分为两行，Measurements 开关单独显示。新增按钮边界检查避免控件被遮挡。
+
+![2.2.3 正式版](screenshots/ui-2.2.3/analysis.png)
+
+![2.2.3 150% 缩放](screenshots/ui-2.2.3/analysis-150.png)
+
+![2.2.3 小窗口](screenshots/ui-2.2.3/analysis-small.png)
+
+下文保留开发预览及旧版本的历史记录。
 
 ## 2026-10-06：2.2.3-preview5 参数操作弹窗调整
 

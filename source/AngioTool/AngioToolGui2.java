@@ -489,7 +489,8 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         imageArea.add(empty, "empty");
         imageArea.add(imageTabs, "images");
         imageCards.show(imageArea, "empty");
-        imageArea.setMinimumSize(UiTheme.size(600, 200));
+        // Allow the image column to shrink before compressing measurement labels at high DPI.
+        imageArea.setMinimumSize(UiTheme.size(360, 200));
         measurementsArea.setMinimumSize(UiTheme.size(280, 100));
         measurementsArea.setPreferredSize(UiTheme.size(350, 450));
         measurementsArea.setVisible(false);

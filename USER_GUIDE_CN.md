@@ -1,16 +1,16 @@
-# AngioTool 2.2.2 中文完整使用指南
+# AngioTool 2.2.3 中文完整使用指南
 
 > **2026-09-12：新增分形维数。** 分析完成后，Measurements 自动显示最终血管掩膜的 `Fractal dimension` 与拟合 R²；单图/批量 Excel 追加维数、R²、有效性、原因、盒子尺寸和计数六列。JSON 保存完整方法参数。无需启用 Lacunarity；小图或空图可能显示 N/A。方法、比较条件和解释边界见 [盒计数分形维数说明](FRACTAL_BOX_COUNT_CN.md)。
 
 > **2026-09-07 UI 更新**：程序已改为单窗口工作台，左侧是 Analysis、Color、Overlay 参数页，右侧是图像标签与 Measurements 统计。Open image（原 View）打开新标签，不再弹出独立分析窗口；标签右侧 × 关闭对应图像。各图像共用分析参数，分别保留缩放、平移及导出路径。Reset defaults、Save image / Save XLSX 对应原恢复默认值和保存操作。下文“分析窗口”应理解为主窗口内的图像分析区。完整变更与验证见 [UI_MODERNIZATION_CN.md](UI_MODERNIZATION_CN.md)。
 
-> 主体适用版本：AngioTool 2.2.2；第 5.2 节另含 2.2.3-preview5 开发预览说明<br>
-> 核对日期：2026-10-06（开发预览仍待运行验证）<br>
+> 适用版本：AngioTool 2.2.3<br>
+> 核对日期：2026-10-06<br>
 > 适用范围：独立 JAR、批处理和实验性 ImageJ 插件；本轮只交付独立 JAR，EXE 构建脚本尚未适配版本化 JAR
 
 AngioTool 2.0 用于从眼科、血管生成或其他二维血管图像中提取血管区域、骨架和拓扑统计。它可以交互分析单张图像，也可以用同一组参数递归处理一批图像。
 
-当前 2.2.2 修正了 8 邻域转角产生的单像素内部连接被误计为 junction 外部支路的问题。受影响图像应使用 2.2.2 重新计算 junction 数量和 junction density；最新测试结果及边界见 [当前验证记录](VALIDATION_CN.md)。
+当前 2.2.3 继承了 2.2.2 的 junction 修正，避免将 8 邻域转角的单像素内部连接误计为交汇点外部支路。受影响图像应使用 2.2.3 重新计算 junction 数量和 junction density；最新测试结果及边界见 [当前验证记录](VALIDATION_CN.md)。
 
 本指南根据当前程序架构和实际代码路径编写。它说明软件如何操作、每个参数实际影响哪个分析阶段、结果文件如何解释，以及如何保证不同样本之间的结果可比较。
 
@@ -97,10 +97,10 @@ java -version
 推荐使用独立模式：
 
 ```powershell
-java -jar .\AngioTool2.2.2.jar
+java -jar .\AngioTool2.2.3.jar
 ```
 
-在 Windows 中也可以双击 `AngioTool2.2.2.jar`，或右键选择 Java Runtime 打开。如果双击没有反应，优先用终端命令启动，以便看到错误信息。
+在 Windows 中也可以双击 `AngioTool2.2.3.jar`，或右键选择 Java Runtime 打开。如果双击没有反应，优先用终端命令启动，以便看到错误信息。
 
 ### 2.3 支持的图像格式
 
@@ -187,9 +187,9 @@ java -jar .\AngioTool2.2.2.jar
 
 普通模式的 `Resize Inputs` 在读取图像时应用，修改后会重载图像；切入二值模式会恢复原始分辨率，切回普通模式恢复原缩放设置。插件模式会重新获取 ImageJ 图像副本。
 
-### 5.2 参数更新与 JSON 配置恢复（2.2.3 预览版）
+### 5.2 参数更新与 JSON 配置恢复（2.2.3）
 
-预览第四版将右栏从 520 缩至 350 个缩放前像素，左栏保持 350。Measurements 是独立第三栏，与图片标签页顶部对齐，占满工作区高度，保留完整分组标题；切换图片显示对应图片的指标，取消 Measurements 勾选可收起这一栏。指标单列排列：图像与面积、长度与直径、网络拓扑、骨架质量、分形维数和 lacunarity；标签完整显示，数值加粗右对齐，E/F lacunarity 同行。配色统一为浅灰背景、白色面板和少量灰蓝色重点色。普通缩放 1480×900 内容区及 150% 缩放 2559×1495 内容区离屏预览均无上下滚动条，包含展开后的高级清理。更小窗口保留滚动兜底，可拖动分隔线调整宽度。折叠/展开高级清理仅影响布局，不应用参数。
+2.2.3 将右栏从 520 缩至 350 个缩放前像素，左栏保持 350。Measurements 是独立第三栏，与图片标签页顶部对齐，占满工作区高度，保留完整分组标题；切换图片显示对应图片的指标，取消 Measurements 勾选可收起这一栏。指标单列排列：图像与面积、长度与直径、网络拓扑、骨架质量、分形维数和 lacunarity；标签完整显示，数值加粗右对齐，E/F lacunarity 同行。配色统一为浅灰背景、白色面板和少量灰蓝色重点色。普通缩放 1480×900 内容区及 150% 缩放 2559×1495 内容区离屏预览均无上下滚动条，包含展开后的高级清理。更小窗口保留滚动兜底，可拖动分隔线调整宽度。正式版优先保留指标栏宽度；图像栏较窄时视图按钮分为两行，Measurements 开关单独显示。折叠/展开高级清理仅影响布局，不应用参数。
 
 图像打开后，可以继续修改主窗口中的大多数参数：
 
@@ -206,7 +206,7 @@ java -jar .\AngioTool2.2.2.jar
 
 导入先解析和校验整份文件，再填入界面。格式或参数错误时原设置保持不变；文件中的图像路径、测量结果和点坐标不会作为配置加载。`normalized-data.json` 没有完整参数，不能用来恢复配置。
 
-旧文件缺失字段时使用代码默认值；缺失剪枝/合并开关时保持关闭。优先读取 `uiParameters`，兼容旧 `analysisParameters` / `overlayParameters`，剪枝读取 `skeletonProcessing`。2.2.3-preview5 加载成功后仅更新状态栏，悬停可查看来源版本，不再弹出缺项或版本差异提示；无效文件仍显示错误弹窗。恢复同一套参数不保证跨版本结果完全相同。
+旧文件缺失字段时使用代码默认值；缺失剪枝/合并开关时保持关闭。优先读取 `uiParameters`，兼容旧 `analysisParameters` / `overlayParameters`，剪枝读取 `skeletonProcessing`。2.2.3 加载成功后仅更新状态栏，悬停可查看来源版本，不再弹出缺项或版本差异提示；无效文件仍显示错误弹窗。恢复同一套参数不保证跨版本结果完全相同。
 
 `Reset defaults` 直接恢复默认参数，不再弹出确认框。自动更新开启时应用到已打开图像；关闭时等待点击 `Apply parameters`。
 
@@ -738,7 +738,7 @@ JSON 的 `uiParameters` 是最完整的参数快照；仅保存截图不足以�
 ### 13.1 JAR 无法启动
 
 1. 在终端运行 `java -version`。
-2. 使用 `java -jar .\AngioTool2.2.2.jar` 启动并查看报错。
+2. 使用 `java -jar .\AngioTool2.2.3.jar` 启动并查看报错。
 3. 确认下载的是完整 JAR，不是网页或损坏文件。
 4. 确认 Java 架构和系统环境正常。
 
@@ -808,7 +808,7 @@ ImageJ 支持是实验性的，独立 JAR 仍是推荐路径。
 
 ### 14.1 安装与打开
 
-1. 把包含 `plugins.config` 的 `AngioTool2.2.2.jar` 放入 ImageJ/Fiji 的插件目录。
+1. 把包含 `plugins.config` 的 `AngioTool2.2.3.jar` 放入 ImageJ/Fiji 的插件目录。
 2. 重启 ImageJ/Fiji。
 3. 打开一张图像。
 4. 从插件菜单选择 `AngioTool2`。
@@ -839,7 +839,7 @@ ImageJ 支持是实验性的，独立 JAR 仍是推荐路径。
 
 ### 15.2 当前发布产物与版本追踪
 
-当前发布版为 2.2.2。`compile.py` 会生成 `AngioTool2.2.2.jar`；源码和发布 JAR 应按项目约定一起纳入 Git 版本管理。回退使用 Git 历史，不要求为每次编译创建时间戳 JAR 备份。
+当前发布版为 2.2.3。`compile.py` 会生成 `AngioTool2.2.3.jar`；源码和发布 JAR 应按项目约定一起纳入 Git 版本管理。回退使用 Git 历史，不要求为每次编译创建时间戳 JAR 备份。
 
 ### 15.3 编译
 
@@ -855,12 +855,12 @@ python .\compile.py
 2. 展开 `source/Utils/*.tj` 模板。
 3. 删除并重建 `build/`。
 4. 使用 `javac --release=8` 编译非 deprecated 源码和 ImageJ stubs。
-5. 打包资源、class、lookup table 和 `plugins.config` 到 `AngioTool2.2.2.jar`。
+5. 打包资源、class、lookup table 和 `plugins.config` 到 `AngioTool2.2.3.jar`。
 
 编译成功后启动：
 
 ```powershell
-java -jar .\AngioTool2.2.2.jar
+java -jar .\AngioTool2.2.3.jar
 ```
 
 项目没有 JUnit 自动测试套件。最低验证应包括：
@@ -916,9 +916,9 @@ java -jar .\AngioTool2.2.2.jar
 
 ## 版本状态
 
-以下内容是 2.1 修复阶段的历史记录，不覆盖本指南前文对当前 2.2.2 的说明。原版目录 `D:\CodeProject\AngioTool` 保持不变。
+以下内容是 2.1 修复阶段的历史记录，不覆盖本指南前文对当前 2.2.3 的说明。原版目录 `D:\CodeProject\AngioTool` 保持不变。
 
-2.1 阶段曾优先修复空结果、异常尺寸、指标命名和结果追踪问题。相关历史背景仍可参考，但正式实验应以当前 2.2.2 程序和前文说明为准。
+2.1 阶段曾优先修复空结果、异常尺寸、指标命名和结果追踪问题。相关历史背景仍可参考，但正式实验应以当前 2.2.3 程序和前文说明为准。
 
 ## 结果有效性
 

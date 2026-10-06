@@ -1,4 +1,41 @@
-# AngioTool 2.2.2 验证记录
+# AngioTool 2.2.3 验证记录
+
+日期：2026-10-06。验证对象为正式产物 `AngioTool2.2.3.jar`。Windows / Microsoft OpenJDK 21.0.8，编译目标 Java 8；class major version 为 52。
+
+## 2.2.3 发布内容
+
+- JSON 参数导入、`Auto update` 与 `Apply parameters` 正式纳入发布。导入只填控件，手动应用和自动更新按当前开关处理；导出保存实际使用的分析参数。
+- Measurements 独立第三栏，使用单列完整指标和统一灰白配色。减小图像栏最小宽度，避免高 DPI/较窄窗口压缩指标；窄图像栏的视图按钮分两行，Measurements 开关另起一行，避免遮挡。
+- 取消恢复默认值确认框和导入成功信息框，保留加载失败错误框。分析算法继承 2.2.2，未更换骨架算法或改变指标定义。
+
+## 最终产物验证
+
+`python compile.py` 成功，仅有 Java 8 目标过时及既有 unchecked 提示。`python benchmarks/run_regression.py --jar AngioTool2.2.3.jar` 的 11 项测试全部通过，JSON/XLSX 语法检查通过，测试期间根目录已有 JAR 哈希均保持不变。完整结果：`verification/regression-pd7vf9xe/summary.json`。
+
+新增 `ParameterImportTest` 覆盖实际生产导出的参数完整往返、休眠参数、旧字段/颜色/骨架方法、UI 参数优先级、比例转换、BOM、无效类型/范围、重复字段、截断/尾随数据、归一化文件拒绝和较大无关点集。
+
+最终包 `UiSmokeTest` 普通及 `-Dflatlaf.uiScale=1.5` 均通过。新增检查实际文件选择器与导入流程、旧版成功导入无信息框、错误提示及恢复编辑、两个图像的手动应用、Auto update 开/关时导入不重算、恢复默认、待应用参数不污染导出，以及第三栏切换/隐藏、指标栏宽度、窄窗口按钮边界。既有真实示例图分析、二值清理、视图和导出检查继续通过；隔离 `user.home`，不修改真实用户配置。
+
+日志：`verification/release-2.2.3/ui.log`、`ui-150.log`。已查看最终包的普通/150% 分析截图及小窗口截图，见 [UI 记录](UI_MODERNIZATION_CN.md)。截图使用仓库示例图，junction=220、血管面积=499335、总长度=27482.02134093198，与 2.2.2 记录一致。
+
+可复现命令（先运行无界面回归，再将目录替换为本次生成的目录）：
+
+```powershell
+python compile.py
+python benchmarks/run_regression.py --jar AngioTool2.2.3.jar
+$testClasses = 'verification/regression-pd7vf9xe/test-classes'
+java -cp "$testClasses;AngioTool2.2.3.jar" AngioTool.UiSmokeTest verification/release-2.2.3/ui
+java '-Dflatlaf.uiScale=1.5' -cp "$testClasses;AngioTool2.2.3.jar" AngioTool.UiSmokeTest verification/release-2.2.3/ui-150
+```
+
+SHA-256：`f096259e7985f18a4d8b4afad25d235e058843d25820429162211b811f145fe7`。
+
+验证边界：没有使用 Java 8 实际运行时、真实 ImageJ/Fiji 宿主或 Microsoft Excel 原生应用复测；GUI 自动化及截图检查不等于完整人工验收，也不覆盖所有显示器/DPI 组合。没有启动骨架算法评估计划或标注数据集的生物学准确性评估。既有研究方法限制继续适用。
+
+## 开发预览及 2.2.2 历史验证
+
+以下内容记录当时的版本状态、文件名和验证结果，不是当前发布说明。
+
 
 > **2026-10-06 参数操作弹窗调整**：2.2.3-preview5 取消 `Reset defaults` 确认框，以及 JSON 加载成功后的缺项/版本差异信息框；成功状态及来源版本保留在状态栏和悬停提示，加载失败仍显示错误弹窗。`python compile.py` 按 Java 8 目标编译成功，仅有目标版本过时及既有 unchecked 提示；`git diff --check` 通过，构建前后 21 个已有 JAR 的 SHA-256 均未变化。沿用此前要求跳过回归、GUI 烟测和人工运行测试，preview5 仍待运行验证，本次按用户要求连同源码、文档与版本化 JAR 作为开发预览提交 Git；2.2.2 仍为最后已验证发布版。
 

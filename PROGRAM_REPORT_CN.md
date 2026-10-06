@@ -1,6 +1,6 @@
-# AngioTool 2.2.2 程序报告
+# AngioTool 2.2.3 程序报告
 
-> **2026-09-30 开发预览**：2.2.3-preview 增加 JSON 参数恢复、用户控制的 `Auto update` 开关及 `Apply parameters`。导入恢复分析、颜色与叠加设置，但只填入界面，不更新现有图片或切换自动更新开关。2026-10-06 的 preview5 取消恢复默认确认框及导入成功信息框，失败提示保留；源码构建默认输出独立 `AngioTool2.2.3-preview5.jar`，2.2.2 仍为最后经过运行验证的发布版；本轮暂不进行运行测试。操作说明见 [用户指南](USER_GUIDE_CN.md#52-参数更新与-json-配置恢复223-预览版)。
+> **2026-10-06：2.2.3 正式版本**：增加 JSON 参数恢复、用户控制的 `Auto update` 开关及 `Apply parameters`。导入恢复分析、颜色与叠加设置，但只填入界面，不更新现有图片或切换自动更新开关。本版取消恢复默认确认框及导入成功信息框，失败提示保留；源码构建默认输出独立 `AngioTool2.2.3.jar`，独立 JAR 的回归及 GUI 验证记录见 [VALIDATION_CN.md](VALIDATION_CN.md)。操作说明见 [用户指南](USER_GUIDE_CN.md#52-参数更新与-json-配置恢复223)。
 
 > **2026-09-12 分形维数更新**：普通/直接二值模式均在最终掩膜上自动执行盒计数分析，输出维数、R²、独立有效性及尺度/计数信息。统计侧栏、单图/批量 Excel 和 JSON 同步接入。具体采样规则、解释边界和验证记录见 [盒计数分形维数](FRACTAL_BOX_COUNT_CN.md)。
 
@@ -10,9 +10,9 @@
 
 ## 1. 项目概述
 
-当前发布版为 AngioTool 2.2.2。2.2.1 阶段的 XLSX 修复属于历史记录；2.2.2 修正了 8 邻域转角产生的单像素内部连接被误计为 junction 外部支路的问题。受影响数据应使用新版本重新计算 junction 数量和 junction density。最新测试结果及边界见 [当前验证记录](VALIDATION_CN.md)。
+当前发布版为 AngioTool 2.2.3。2.2.1 阶段的 XLSX 修复属于历史记录；2.2.2 修正了 8 邻域转角产生的单像素内部连接被误计为 junction 外部支路的问题。受影响数据应使用新版本重新计算 junction 数量和 junction density。最新测试结果及边界见 [当前验证记录](VALIDATION_CN.md)。
 
-当前发布版 AngioTool 2.2.2 是一个 Java 桌面图像分析程序，主要用于眼部扫描、血管造影或 OCT 图像中的血管结构分析。程序从输入图像中识别血管区域，生成带有轮廓、骨架、分支点和凸包的叠加图，并导出结构化统计结果到 Excel。文中提到的 2.0 是上游项目的历史版本背景。
+当前发布版 AngioTool 2.2.3 是一个 Java 桌面图像分析程序，主要用于眼部扫描、血管造影或 OCT 图像中的血管结构分析。程序从输入图像中识别血管区域，生成带有轮廓、骨架、分支点和凸包的叠加图，并导出结构化统计结果到 Excel。文中提到的 2.0 是上游项目的历史版本背景。
 
 核心用户场景有两个：
 
@@ -38,7 +38,7 @@
 
 构建产物主要是：
 
-- `AngioTool2.2.2.jar`
+- `AngioTool2.2.3.jar`
 - 历史 `AngioTool2-32.exe` / `AngioTool2-64.exe`（`buildexe.py` 尚未适配版本化 JAR，本轮只交付独立 JAR）
 
 ## 3. 目录与模块职责
@@ -414,7 +414,7 @@ compile.py
 3. 处理 `source/` 中的 `.tj` 模板，生成 Java 文件。
 4. 收集 Java 源文件和 stub。
 5. 使用 `javac --release=8` 编译到 `build/`。
-6. 打包资源、class 文件、lookup table 和 `plugins.config` 到当前发布产物 `AngioTool2.2.2.jar`。
+6. 打包资源、class 文件、lookup table 和 `plugins.config` 到当前发布产物 `AngioTool2.2.3.jar`。
 
 Windows EXE 构建：
 
@@ -704,11 +704,11 @@ median local mask diameter
 
 ```powershell
 python .\compile.py
-javac --release=8 -cp AngioTool2.2.2.jar -d build benchmarks\AngioTool\AnalysisRegressionTest.java
-java -cp "AngioTool2.2.2.jar;build" benchmarks.AngioTool.AnalysisRegressionTest
+javac --release=8 -cp AngioTool2.2.3.jar -d build benchmarks\AngioTool\AnalysisRegressionTest.java
+java -cp "AngioTool2.2.3.jar;build" benchmarks.AngioTool.AnalysisRegressionTest
 ```
 
-`compile.py` 生成当前发布产物 `AngioTool2.2.2.jar`。回退和版本追踪以 Git 历史为准；不要求也不应为每次编译创建时间戳 JAR 备份。历史修复阶段曾创建过以下备份，记录仅供追溯：
+`compile.py` 生成当前发布产物 `AngioTool2.2.3.jar`。回退和版本追踪以 Git 历史为准；不要求也不应为每次编译创建时间戳 JAR 备份。历史修复阶段曾创建过以下备份，记录仅供追溯：
 
 ```text
 AngioTool2-*-before-compile.jar

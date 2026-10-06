@@ -74,6 +74,7 @@ def main():
             ("AngioTool.SkeletonPipelineTest", [str(output / "skeleton")]),
             ("benchmarks.AngioTool.AnalysisRegressionTest", []),
             ("AngioTool.BinaryMaskTest", []),
+            ("AngioTool.ParameterImportTest", [str(output / "parameters")]),
             ("AngioTool.BatchOutputPathTest", [str(ROOT / "source/deprecated/images/ImageExample.png")]),
             ("AngioTool.FractalBoxCountTest", []),
             ("AngioTool.FractalIntegrationTest", [str(output / "fractal")]),

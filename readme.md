@@ -1,22 +1,22 @@
-# AngioTool 2.2.3 preview 5
+# AngioTool 2.2.3
 
-The fifth preview removes the Reset defaults confirmation and the successful
+Version 2.2.3 removes the Reset defaults confirmation and the successful
 parameter-import information dialog. Load parameters... reports success in the
 status bar; its tooltip shows the source version. Invalid files still show an
 error dialog. Reset defaults restores the controls immediately and follows the
 current Auto update setting.
 
-It keeps the fourth preview's 350-logical-pixel parameter panel and narrows the
-measurement panel from 520 to 350 pixels. It is an independent third column aligned
+The workspace uses a 350-logical-pixel parameter panel and a
+350-pixel measurement panel. It is an independent third column aligned
 with image tabs, using the full workspace height. Switching tabs shows that image's
 measurements; the Measurements checkbox hides the column. All six groups keep full
 labels and headings, with E/F lacunarity side by side. A unified neutral gray and white with restrained blue-gray accents
-palette also covers selections and checkboxes. Fourth-preview offscreen layouts fit all controls (including
+palette also covers selections and checkboxes. The development previews' offscreen layouts fit all controls (including
 expanded cleanup) and metrics at a 1480x900 content area with normal scaling and
 2559x1495 with 150% scaling. Narrow panels retain a scrolling fallback. See the
 [UI layout record](UI_MODERNIZATION_CN.md) for dimensions and verification limits.
 
-## Parameter snapshot import (added 2026-09-30; updated 2026-10-06, awaiting runtime verification)
+## Parameter snapshot import (2.2.3, 2026-10-06)
 
 `Load parameters...` restores analysis settings, color preprocessing and overlay
 styles from any AngioTool `overlay-data.json` file. Import fills in the controls
@@ -32,17 +32,18 @@ remain off. Invalid JSON leaves the controls unchanged;
 normalized-data JSON has no complete parameter snapshot. Existing results keep
 their actual analysis parameters until updated, including in saved JSON/XLSX.
 
-Build and run the separate preview with:
+Build and run the release with:
 
     python compile.py
-    java -jar AngioTool2.2.3-preview5.jar
+    java -jar AngioTool2.2.3.jar
 
-The preview is not a verified release. No runtime tests were requested for this
-change. The existing 2.2.2 release and its validation record remain available below.
+Release validation covers the headless regression suite, parameter import and
+GUI smoke tests at normal and 150% scaling. See [validation](VALIDATION_CN.md) for
+reproducible commands, results and remaining limits.
 
 ## Local 2.2.2 Update (2026-09-16)
 
-The last verified release is AngioTool 2.2.2, a local extension of the upstream 2.0
+AngioTool 2.2.3 inherits the 2.2.2 fixes in this local extension of the upstream 2.0
 batch edition. It keeps the original Tubeness analysis path and adds:
 
 - corrected junction counting at raster corners: a one-pixel connection inside
@@ -72,9 +73,9 @@ replaced with zero.
 - [UI changes and verification](UI_MODERNIZATION_CN.md): screenshots, tests and backups.
 - [English manual](source/manual.html).
 
-Run the last verified release with:
+Run the current release with:
 
-    java -jar AngioTool2.2.2.jar
+    java -jar AngioTool2.2.3.jar
 
 The build targets Java 8. Each completed development change is committed to Git with
 its versioned JAR and documented verification status; routine builds do not require
@@ -83,7 +84,7 @@ legacy `AngioTool2.jar` remains protected from accidental replacement.
 
 Run the headless regression suite against the release artifact with:
 
-    python benchmarks/run_regression.py --jar AngioTool2.2.2.jar
+    python benchmarks/run_regression.py --jar AngioTool2.2.3.jar
 
 Omit `--jar` to build and test an isolated verification JAR. Logs, synthetic
 exports and a JSON summary are saved under `verification/regression-*`.

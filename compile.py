@@ -8,7 +8,7 @@ import subprocess
 import argparse
 
 parser = argparse.ArgumentParser(description="Build AngioTool without replacing the legacy JAR by default.")
-parser.add_argument("--output", default="AngioTool2.2.3-preview5.jar", help="Output JAR path")
+parser.add_argument("--output", default="AngioTool2.2.3.jar", help="Output JAR path")
 args = parser.parse_args()
 output_jar = os.path.abspath(args.output)
 if os.path.normcase(output_jar) == os.path.normcase(os.path.abspath("AngioTool2.jar")):
@@ -142,4 +142,4 @@ with zipfile.ZipFile(output_jar, compression=zipfile.ZIP_DEFLATED, compresslevel
     zip.writestr("lee94-simple-points.bin", simple_points_lut)
     zip.write("plugins.config")
 
-# java -Dsun.java2d.uiScale=2 -jar AngioTool2.2.3-preview5.jar
+# java -Dsun.java2d.uiScale=2 -jar AngioTool2.2.3.jar

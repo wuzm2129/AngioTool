@@ -608,13 +608,39 @@ public class ImagingWindow extends JPanel implements ActionListener, KeyListener
         UiTheme.tool(btnPanRight, "Pan right");
         UiTheme.tool(btnPanUp, "Pan up");
         UiTheme.tool(btnPanDown, "Pan down");
-        tools.add(UiTheme.row(btnZoomOut, btnZoomIn, btnFit, btnActualSize,
-            btnPanLeft, btnPanUp, btnPanDown, btnPanRight), BorderLayout.WEST);
+        JPanel zoomControls = new JPanel(new GridLayout(1, 8, UiTheme.size(6, 0).width, 0));
+        zoomControls.setOpaque(false);
+        for (JButton button : new JButton[] {btnZoomOut, btnZoomIn, btnFit, btnActualSize,
+                btnPanLeft, btnPanUp, btnPanDown, btnPanRight})
+            zoomControls.add(button);
+        JPanel zoomRow = new JPanel(new BorderLayout());
+        zoomRow.setOpaque(false);
+        zoomRow.add(zoomControls, BorderLayout.WEST);
+        tools.add(zoomRow, BorderLayout.CENTER);
         tools.add(cbShowStats, BorderLayout.EAST);
-        JPanel imageHeader = new JPanel(new BorderLayout());
-        imageHeader.add(tools, BorderLayout.NORTH);
-        JPanel views = UiTheme.row(viewOriginal, viewMask, viewOverlay, viewRawSkeleton);
+        JPanel views = new JPanel(new GridLayout(1, 4, 6, 6));
+        views.setOpaque(false);
+        for (JToggleButton button : new JToggleButton[] {viewOriginal, viewMask, viewOverlay, viewRawSkeleton})
+            views.add(button);
         views.setBorder(new EmptyBorder(0, 12, 8, 12));
+        JPanel imageHeader = new JPanel(new BorderLayout()) {
+            private boolean compact;
+
+            @Override public Dimension getPreferredSize()
+            {
+                boolean narrow = ImagingWindow.this.getWidth() < UiTheme.size(580, 0).width;
+                if (narrow != compact) {
+                    compact = narrow;
+                    tools.remove(cbShowStats);
+                    tools.add(cbShowStats, compact ? BorderLayout.SOUTH : BorderLayout.EAST);
+                    zoomRow.remove(zoomControls);
+                    zoomRow.add(zoomControls, compact ? BorderLayout.CENTER : BorderLayout.WEST);
+                    views.setLayout(new GridLayout(compact ? 2 : 1, compact ? 2 : 4, 6, 6));
+                }
+                return super.getPreferredSize();
+            }
+        };
+        imageHeader.add(tools, BorderLayout.NORTH);
         imageHeader.add(views, BorderLayout.SOUTH);
         root.add(imageHeader, BorderLayout.NORTH);
         imageUi.setMinimumSize(new Dimension(200, 160));

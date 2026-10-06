@@ -149,6 +149,7 @@ public class UiSmokeTest
                 catch (Exception ex) { throw new RuntimeException(ex); }
             });
             awaitAnalysis(second);
+            testParameterActions(isolatedHome);
             SwingUtilities.invokeAndWait(() -> {
                 check(main.imageTabs.getTabCount() == 2, "Second image opens as tab");
                 check(SwingUtilities.getWindowAncestor(second) == main, "Second image embedded");
@@ -158,9 +159,11 @@ public class UiSmokeTest
                 check(visibleFrames == 1, "Only one application frame after opening multiple images");
                 clickImageTab(image, true);
                 check(main.imageTabs.getSelectedComponent() == image, "Click first image title selects it");
+                check(image.statistics.getParent() == main.measurementsArea, "First image measurements selected");
                 image.btnActualSize.doClick();
                 clickImageTab(second, true);
                 check(main.imageTabs.getSelectedComponent() == second, "Click second image title selects it");
+                check(second.statistics.getParent() == main.measurementsArea, "Second image measurements selected");
                 check(!second.imageUi.actualSize, "Tabs have independent view state");
                 clickImageTab(image, false);
                 check(main.imageTabs.getSelectedComponent() == image, "Click tab padding selects it");
@@ -198,15 +201,22 @@ public class UiSmokeTest
                 image.btnFit.doClick();
                 check(!image.imageUi.actualSize && image.imageUi.zoomLevels == 0, "Fit control");
                 image.cbShowStats.doClick();
-                check(!image.statistics.isVisible(), "Hide statistics");
+                check(!main.measurementsArea.isVisible() && !image.statistics.isShowing(), "Hide measurements column");
                 image.cbShowStats.doClick();
-                check(image.statistics.isVisible(), "Show statistics");
+                check(main.measurementsArea.isShowing() && image.statistics.getParent() == main.measurementsArea,
+                    "Show measurements in the independent column");
                 image.validate();
                 main.validate();
+                check(main.measurementsArea.getWidth() >= UiTheme.size(280, 0).width,
+                    "Measurements retain their minimum width at the current DPI");
                 snapshot(main, "analysis.png");
                 main.setSize(UiTheme.size(1100, 640));
                 main.validate();
                 image.initializeDivider();
+                check(main.measurementsArea.getWidth() >= UiTheme.size(280, 0).width,
+                    "Small windows preserve the measurements width");
+                checkControlBounds(image.viewRawSkeleton, "Small-window raw skeleton button");
+                checkControlBounds(image.cbShowStats, "Small-window measurements switch");
                 snapshot(main, "analysis-small.png");
                 main.setSize(UiTheme.size(1480, 900));
                 main.validate();
@@ -293,6 +303,110 @@ public class UiSmokeTest
         check(window.imageUi.getDisplayedImage() == window.imageUi.drawingImage, "Overlay view restored");
     }
 
+
+    static void testParameterActions(Path home) throws Exception
+    {
+        File snapshot = home.resolve("older-parameters.json").toFile();
+        Files.write(snapshot.toPath(), ("{\"programVersion\":\"older version\",\"analysisParameters\":" +
+            "{\"lowThreshold\":41,\"highThreshold\":240,\"vesselThickness\":[5,12]}}")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        SwingUtilities.invokeAndWait(() -> main.cbAutoUpdate.doClick());
+        loadSnapshot(snapshot, false);
+        SwingUtilities.invokeAndWait(() -> {
+            check(!main.cbAutoUpdate.isSelected(), "Import keeps manual update selected");
+            check(main.buildAnalyzerParamsFromUi().thresholdLow == 41, "Import fills controls");
+            check(image.imageUi.currentParams.thresholdLow == 15 && second.imageUi.currentParams.thresholdLow == 15,
+                "Import leaves both existing analyses unchanged");
+            image.textSaveImage.setText(home.resolve("pending-export.png").toString());
+            image.saveResultImage();
+        });
+        AnalyzerParameters exported = AnalyzerParameterImporter.load(home.resolve("pending-export overlay-data.json").toFile()).parameters;
+        check(exported.thresholdLow == 15, "Export records applied parameters rather than pending controls");
+        SwingUtilities.invokeAndWait(() -> main.btnApplyParameters.doClick());
+        awaitAnalysis(image);
+        awaitAnalysis(second);
+        SwingUtilities.invokeAndWait(() -> {
+            check(image.imageUi.currentParams.thresholdLow == 41 && second.imageUi.currentParams.thresholdLow == 41,
+                "Manual apply updates both images");
+            main.btnReset.doClick();
+            check(main.buildAnalyzerParamsFromUi().equals(AnalyzerParameters.defaults()), "Reset restores defaults without a dialog");
+            check(!main.cbAutoUpdate.isSelected() && image.imageUi.currentParams.thresholdLow == 41,
+                "Reset in manual mode preserves applied result and switch");
+            main.cbAutoUpdate.doClick();
+        });
+        awaitAnalysis(image);
+        awaitAnalysis(second);
+        loadSnapshot(snapshot, false);
+        SwingUtilities.invokeAndWait(() -> {
+            check(main.cbAutoUpdate.isSelected(), "Import keeps automatic update selected");
+            check(image.imageUi.currentParams.thresholdLow == 15 && second.imageUi.currentParams.thresholdLow == 15,
+                "Import also defers analysis when automatic update is selected");
+            check(main.labelStatus.getToolTipText().contains("older version"), "Source version in tooltip");
+            main.btnApplyParameters.doClick();
+        });
+        awaitAnalysis(image);
+        awaitAnalysis(second);
+        File invalid = home.resolve("invalid-parameters.json").toFile();
+        Files.write(invalid.toPath(), "{\"uiParameters\":null}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        loadSnapshot(invalid, true);
+        SwingUtilities.invokeAndWait(() -> {
+            check(main.buildAnalyzerParamsFromUi().thresholdLow == 41, "Failed import leaves controls unchanged");
+            check(image.imageUi.currentParams.thresholdLow == 41 && main.cbAutoUpdate.isSelected(),
+                "Failed import leaves analysis and automatic update unchanged");
+            main.btnReset.doClick();
+        });
+        awaitAnalysis(image);
+        awaitAnalysis(second);
+        SwingUtilities.invokeAndWait(() -> check(image.imageUi.currentParams.equals(AnalyzerParameters.defaults()) &&
+            second.imageUi.currentParams.equals(AnalyzerParameters.defaults()), "Automatic reset applies to both images"));
+    }
+
+    static void loadSnapshot(File file, boolean expectedError) throws Exception
+    {
+        final boolean[] selected = {false};
+        final boolean[] sawError = {false};
+        final boolean[] completed = {false};
+        SwingUtilities.invokeLater(() -> main.btnLoadParameters.doClick());
+        long deadline = System.currentTimeMillis() + 30000;
+        while (!completed[0] && System.currentTimeMillis() < deadline) {
+            SwingUtilities.invokeAndWait(() -> {
+                for (Window window : Window.getWindows()) {
+                    if (!(window instanceof JDialog) || !window.isShowing()) continue;
+                    JDialog dialog = (JDialog)window;
+                    JFileChooser chooser = findChooser(dialog);
+                    if (chooser != null && !selected[0]) {
+                        selected[0] = true;
+                        chooser.setSelectedFile(file);
+                        chooser.approveSelection();
+                    }
+                    else if (chooser == null) {
+                        sawError[0] = "Could not load parameters".equals(dialog.getTitle());
+                        dialog.dispose();
+                        check(expectedError && sawError[0], "Only failed imports show a message dialog");
+                    }
+                }
+                completed[0] = selected[0] && !main.loadingParameters;
+            });
+            if (!completed[0]) Thread.sleep(50);
+        }
+        check(completed[0], "Parameter import timed out");
+        check(sawError[0] == expectedError, "Import error dialog expectation");
+        SwingUtilities.invokeAndWait(() -> check(main.btnLoadParameters.isEnabled() && main.btnApplyParameters.isEnabled()
+            && main.btnReset.isEnabled() && main.cbAutoUpdate.isEnabled(), "Import restores editing controls"));
+    }
+
+    static JFileChooser findChooser(Container parent)
+    {
+        if (parent instanceof JFileChooser) return (JFileChooser)parent;
+        for (Component child : parent.getComponents()) {
+            if (child instanceof Container) {
+                JFileChooser chooser = findChooser((Container)child);
+                if (chooser != null) return chooser;
+            }
+        }
+        return null;
+    }
+
     static void testBinaryWorkspace(Path home) throws Exception
     {
         BufferedImage mask = new BufferedImage(96, 96, BufferedImage.TYPE_INT_RGB);
@@ -375,6 +489,16 @@ public class UiSmokeTest
         graphics.dispose();
         try { ImageIO.write(bitmap, "png", outputs.resolve(name).toFile()); }
         catch (Exception ex) { throw new RuntimeException(ex); }
+    }
+
+    static void checkControlBounds(Component control, String message)
+    {
+        Component child = control;
+        for (Container parent = child.getParent(); parent != null && parent != image; parent = child.getParent()) {
+            check(child.getX() >= 0 && child.getY() >= 0 && child.getX() + child.getWidth() <= parent.getWidth()
+                && child.getY() + child.getHeight() <= parent.getHeight(), message + " stays within its ancestors");
+            child = parent;
+        }
     }
 
     static void check(boolean condition, String message)

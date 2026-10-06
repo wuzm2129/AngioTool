@@ -2,7 +2,7 @@
 
 > **2026-09-12 新增字段**：JSON 在 `metrics.fractalBoxCount` 中增加最终血管掩膜的盒计数结果，包含维数、R²、独立有效性和实际尺度/计数；不替换既有统计字段。不可计算的浮点值写为 JSON `null`。完整算法与字段说明见 [盒计数分形维数](FRACTAL_BOX_COUNT_CN.md)。
 
-核对日期：2026-09-07。适用于当前本地 2.1 的普通/直接二值模式、独立清理设置和三视图界面。
+核对日期：2026-10-06。适用于当前本地 2.2.3 的普通/直接二值模式、独立清理设置和三视图界面。
 
 本文档说明 AngioTool 在保存结果图时额外导出的配套文件：`vessel-mask.png`、`overlay-data.json`，以及启用 `Export normalized data` 时生成的 `normalized-data.json`。这些文件用于后续通过 Python、MATLAB、JavaScript 或其他编程工具读取、复核和二次分析血管检测结果。
 
@@ -143,7 +143,7 @@ results/ana_a overlay-data.json
 
 ## 5. `uiParameters`
 
-**2.2.3 预览版配置导入**：主界面的 `Load parameters...` 可从本文件恢复分析、颜色和叠加设置，加载只填入控件，不更新已打开图片，也不改变自动更新开关。点击 `Apply parameters` 可手动应用。导入优先采用 `uiParameters`，兼容旧参数组，并读取 `skeletonProcessing` 中的剪枝设置；缺项使用默认值，缺失剪枝/合并开关保持关闭。preview5 加载成功后仅更新状态栏，来源版本保留在悬停提示中，不再弹出缺项或版本差异提示；加载失败仍显示错误弹窗。`normalized-data.json` 不包含这些完整配置，无法恢复参数。
+**2.2.3 配置导入**：主界面的 `Load parameters...` 可从本文件恢复分析、颜色和叠加设置，加载只填入控件，不更新已打开图片，也不改变自动更新开关。点击 `Apply parameters` 可手动应用。导入优先采用 `uiParameters`，兼容旧参数组，并读取 `skeletonProcessing` 中的剪枝设置；缺项使用默认值，缺失剪枝/合并开关保持关闭。2.2.3 加载成功后仅更新状态栏，来源版本保留在悬停提示中，不再弹出缺项或版本差异提示；加载失败仍显示错误弹窗。`normalized-data.json` 不包含这些完整配置，无法恢复参数。
 
 `uiParameters` 保存主界面上可调整的分析参数、颜色预处理参数和叠加显示参数。这个字段按界面区域分组，便于后续外部工具直接理解“这次分析运行时界面上是怎么设置的”。
 
