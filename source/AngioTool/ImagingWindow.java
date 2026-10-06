@@ -89,7 +89,7 @@ public class ImagingWindow extends JPanel implements ActionListener, KeyListener
             this.imgHeight = source.height;
             this.luminanceTable = new float[255];
             this.drawingImage = new BufferedImage(imgWidth, imgHeight, BufferedImage.TYPE_INT_RGB);
-            this.backgroundColor = new Color(29, 32, 35);
+            this.backgroundColor = UiTheme.CANVAS;
             this.wheelColors = new Color[8];
             this.loadTicks = 0;
             this.areaRect = new Rectangle();
@@ -417,10 +417,11 @@ public class ImagingWindow extends JPanel implements ActionListener, KeyListener
     boolean everSaved;
     boolean closed;
     boolean analysisRunning;
+    private AnalyzerParameters activeAnalysisParams;
 
     ImagingDisplay imageUi;
     final StatisticsPanel statistics = new StatisticsPanel();
-    final JSplitPane workspace = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+    final JPanel workspace = new JPanel(new BorderLayout());
     final JLabel analysisStatus = new JLabel("Analyzing...");
     final JButton btnFit = new JButton(new FlatWindowMaximizeIcon());
     final JButton btnActualSize = new JButton("1:1");
@@ -522,8 +523,7 @@ public class ImagingWindow extends JPanel implements ActionListener, KeyListener
 
     void initializeDivider()
     {
-        workspace.setDividerLocation(Math.max(UiTheme.size(230, 0).width,
-            getWidth() - statistics.getPreferredSize().width));
+        parentFrame.initializeMeasurementsDivider();
     }
 
     public Raster getImageRaster()
@@ -559,12 +559,21 @@ public class ImagingWindow extends JPanel implements ActionListener, KeyListener
         setVisible(false);
     }
 
+    boolean needsParameterUpdate(AnalyzerParameters params)
+    {
+        if (closed)
+            return false;
+        if (imageUi.waiting)
+            return !params.equals(imageUi.pendingParams != null ? imageUi.pendingParams : activeAnalysisParams);
+        return imageUi.currentStats == null || !params.equals(imageUi.currentParams);
+    }
+
     public void updateImage(AnalyzerParameters params)
     {
         if (closed)
             return;
         if (imageUi.waiting) {
-            imageUi.pendingParams = params;
+            imageUi.pendingParams = params.equals(activeAnalysisParams) ? null : params;
             return;
         }
 
@@ -609,10 +618,7 @@ public class ImagingWindow extends JPanel implements ActionListener, KeyListener
         imageHeader.add(views, BorderLayout.SOUTH);
         root.add(imageHeader, BorderLayout.NORTH);
         imageUi.setMinimumSize(new Dimension(200, 160));
-        workspace.setLeftComponent(imageUi);
-        workspace.setRightComponent(statistics);
-        workspace.setResizeWeight(1.0);
-        workspace.setContinuousLayout(true);
+        workspace.add(imageUi, BorderLayout.CENTER);
         workspace.setBorder(BorderFactory.createEmptyBorder());
         root.add(workspace, BorderLayout.CENTER);
 
@@ -646,6 +652,7 @@ public class ImagingWindow extends JPanel implements ActionListener, KeyListener
     {
         if (closed)
             return;
+        activeAnalysisParams = params;
         statistics.showStatus("Analyzing...", false);
         analysisStatus.setText("Analyzing...");
         analysisStatus.setForeground(UiTheme.MUTED);
@@ -947,11 +954,7 @@ public class ImagingWindow extends JPanel implements ActionListener, KeyListener
             imageUi.panBy(1, 0);
         else if (source == cbShowStats)
         {
-            statistics.setVisible(cbShowStats.isSelected());
-            workspace.setDividerSize(cbShowStats.isSelected() ? 6 : 0);
-            if (cbShowStats.isSelected())
-                workspace.setDividerLocation(Math.max(250,
-                    workspace.getWidth() - statistics.getPreferredSize().width));
+            parentFrame.showSelectedMeasurements();
         }
         else if (source == btnFit)
             imageUi.resetView(false);

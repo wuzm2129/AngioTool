@@ -75,6 +75,40 @@ diameter is the former Average Vessel Diameter. Area uses the vessel-mask
 convex hull, not an independently selected tissue ROI. Older terminology
 below is retained for compatibility with previous documentation.</p>
 
+<h3>Parameter snapshots (2.2.3 preview)</h3>
+<p>The fifth preview removes the Reset defaults confirmation and successful-import
+information dialog. Reset defaults restores the controls immediately, applying them
+to open images when Auto update is on and waiting for Apply parameters when it is off.
+Successful imports update the status bar, whose tooltip shows the source version.
+Invalid files still show an error dialog.</p>
+<p>The fourth preview uses 350-logical-pixel parameter and measurement panels, with
+a coordinated neutral gray and white with restrained blue-gray accents palette. Measurements are an independent third
+column aligned with the image tabs and spanning the workspace height. Switching image
+tabs shows the corresponding results. The Measurements checkbox hides this column.
+Measurements form a single column with full labels for area, length/diameter, network
+topology, skeleton quality, fractal dimension and lacunarity. E/F lacunarity
+values share a row. Group headings remain visible; scrolling remains
+available for small windows. Drag the dividers to balance parameters, image and results.
+Expanding advanced cleanup only changes the layout.</p>
+<p>Load parameters... restores analysis, color preprocessing and overlay style from an
+AngioTool overlay-data.json file. Import only fills in the controls: it does not update
+open images or change the Auto update switch. Apply parameters updates all open images.
+Auto update is initially on; turn it off yourself to edit settings before applying them.
+Turning it back on also applies the current settings.</p>
+<p>With automatic updates on, checkboxes, numeric controls and colors update the images;
+text edits update on Enter or focus loss. Analysis changes recompute measurements,
+while overlay-only changes redraw the existing result. View changes, zoom and pan do
+not reanalyze. Opening a new image still performs its initial analysis, and Batch reads
+the current controls when started. Turning automatic updates off does not cancel work
+already running or queued.</p>
+<p>Invalid snapshots leave the controls unchanged. Missing fields use defaults without
+an information dialog; missing pruning or merging switches stay off. Different source
+versions may produce different results with the same parameters. Normalized-data JSON
+does not include a complete parameter snapshot. Image paths, zoom, pan and export paths
+are not restored. Saving an existing result records the parameters actually used for that
+result, even when the controls contain unapplied settings. The switch itself is not imported
+or persisted.</p>
+
 <h3>Direct binary masks</h3>
 <p>Analysis &gt; Vessel detection &gt; Use binary mask directly accepts black
 background and white foreground masks (RGB 0/255 or 0/1). Other grayscale or

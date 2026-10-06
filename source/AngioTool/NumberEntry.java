@@ -90,7 +90,11 @@ public class NumberEntry
     {
         JPanel panel = new JPanel(new java.awt.BorderLayout(10, 0));
         JPanel input = new JPanel(new java.awt.BorderLayout(6, 0));
-        spinner.setPreferredSize(UiTheme.size(105, 30));
+        spinner.setPreferredSize(UiTheme.size(88, 28));
+        units.setPreferredSize(new java.awt.Dimension(Math.max(UiTheme.size(16, 0).width,
+            units.getPreferredSize().width), UiTheme.size(0, 24).height));
+        units.setForeground(UiTheme.MUTED);
+        input.setPreferredSize(UiTheme.size(110, 28));
         input.add(spinner, java.awt.BorderLayout.CENTER);
         input.add(units, "1 :".equals(units.getText()) ?
             java.awt.BorderLayout.WEST : java.awt.BorderLayout.EAST);

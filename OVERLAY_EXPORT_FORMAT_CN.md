@@ -143,6 +143,8 @@ results/ana_a overlay-data.json
 
 ## 5. `uiParameters`
 
+**2.2.3 预览版配置导入**：主界面的 `Load parameters...` 可从本文件恢复分析、颜色和叠加设置，加载只填入控件，不更新已打开图片，也不改变自动更新开关。点击 `Apply parameters` 可手动应用。导入优先采用 `uiParameters`，兼容旧参数组，并读取 `skeletonProcessing` 中的剪枝设置；缺项使用默认值，缺失剪枝/合并开关保持关闭。preview5 加载成功后仅更新状态栏，来源版本保留在悬停提示中，不再弹出缺项或版本差异提示；加载失败仍显示错误弹窗。`normalized-data.json` 不包含这些完整配置，无法恢复参数。
+
 `uiParameters` 保存主界面上可调整的分析参数、颜色预处理参数和叠加显示参数。这个字段按界面区域分组，便于后续外部工具直接理解“这次分析运行时界面上是怎么设置的”。
 
 该字段不会替代旧的 `analysisParameters` 和 `overlayParameters`。旧字段仍会保留，用于兼容之前的分析脚本；新字段更适合后续按界面语义读取。

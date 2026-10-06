@@ -15,6 +15,8 @@ import java.awt.image.Raster;
 import java.io.File;
 import java.io.InputStream;
 import java.util.LinkedList;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
@@ -35,6 +37,9 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
     final JButton btnLoadImageOrSubmit = new JButton();
     final JButton btnStartBatch = new JButton();
     final JButton btnHelp = new JButton();
+    final JButton btnLoadParameters = new JButton("Load parameters...");
+    final JButton btnApplyParameters = new JButton("Apply parameters");
+    final JCheckBox cbAutoUpdate = new JCheckBox("Auto update", true);
 
     final JLabel labelAnalysis = new JLabel();
     final JCheckBox cbComputeLacunarity = new JCheckBox();
@@ -92,7 +97,6 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
     final JButton btnReset = new JButton();
     final JLabel labelMemory = new JLabel();
 
-    AnalyzerParameters latestAnalyzerParams = null;
     String defaultPath;
 
     public final LinkedList<ImagingWindow> imagingWindows = new LinkedList<>();
@@ -103,14 +107,26 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
     final CardLayout imageCards = new CardLayout();
     final JPanel imageArea = new JPanel(imageCards);
     final JSplitPane mainWorkspace = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+    final JSplitPane resultsWorkspace = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+    final JPanel measurementsArea = new JPanel(new BorderLayout());
+    private int measurementsWidth;
     boolean updatingUi;
+    boolean loadingParameters;
+    String parameterPath;
+    final Map<Component, Boolean> parameterEnabledStates = new IdentityHashMap<>();
 
     public AngioToolGui2(Object source, AnalyzerParameters analyzerParams, String defaultPath)
+    {
+        this(source, analyzerParams, defaultPath, true);
+    }
+
+    AngioToolGui2(Object source, AnalyzerParameters analyzerParams, String defaultPath, boolean visible)
     {
         super(AngioTool.TITLE + (source != null ? " - ImageJ Plugin" : ""));
         this.pluginCtx = (ATPlugin.PlugContext)source;
         boolean isPlugin = source != null;
         this.defaultPath = defaultPath;
+        this.parameterPath = defaultPath;
 
         this.setIconImage(AngioTool.ATIcon.getImage());
 
@@ -168,7 +184,7 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
         labelSigmas.setText("Vessel Diameters list");
 
-        textSigmas.setText(Misc.formatDoubleArray(analyzerParams.sigmas, "12"));
+        textSigmas.setText(Misc.formatDoubleArray(analyzerParams.sigmas, ""));
         textSigmas.setToolTipText("List of Sigmas (numbers)");
 
         labelIntensity.setText("Vessel Intensity range");
@@ -270,7 +286,7 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
         this.setMinimumSize(UiTheme.size(1040, 580));
         UiTheme.place(this, null, 1480, 900);
-        mainWorkspace.setDividerLocation(UiTheme.size(400, 0).width);
+        mainWorkspace.setDividerLocation(UiTheme.size(350, 0).width);
 
         if (pluginCtx != null) {
             EventQueue.invokeLater(() -> {
@@ -279,10 +295,15 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
             });
         }
 
-        this.setVisible(true);
+        this.setVisible(visible);
     }
 
     void setAnalysisUi(AnalyzerParameters analyzerParams)
+    {
+        setAnalysisUi(analyzerParams, true);
+    }
+
+    private void setAnalysisUi(AnalyzerParameters analyzerParams, boolean updateImages)
     {
         updatingUi = true;
         cbUseBinaryMask.setSelected(analyzerParams.shouldUseBinaryMask);
@@ -302,7 +323,7 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         elemBinaryFillHoles.update(analyzerParams.binaryFillHoles, analyzerParams.binaryHoleRadius);
         elemBinaryRemoveParticles.update(analyzerParams.binaryRemoveSmallParticles, analyzerParams.binarySmallParticleRadius);
 
-        textSigmas.setText(Misc.formatDoubleArray(analyzerParams.sigmas, "12"));
+        textSigmas.setText(Misc.formatDoubleArray(analyzerParams.sigmas, ""));
         textMinIntensity.setText("" + analyzerParams.thresholdLow);
         textMaxIntensity.setText("" + analyzerParams.thresholdHigh);
 
@@ -332,9 +353,11 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         rbImageIsolated.setSelected(analyzerParams.shouldIsolateBrightestChannelInOutput && !analyzerParams.shouldExpandOutputToGrayScale);
         rbImageGray.setSelected(analyzerParams.shouldIsolateBrightestChannelInOutput && analyzerParams.shouldExpandOutputToGrayScale);
 
-        updatingUi = false;
         updateInputModeControls();
         toggleTransformColors();
+        updatingUi = false;
+        if (updateImages)
+            maybeUpdateImagingWindows();
     }
 
     private void initButton(JButton button, ImageIcon icon, String text)
@@ -348,10 +371,15 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
     {
         JPanel root = new JPanel(new BorderLayout());
         JPanel header = new JPanel(new BorderLayout(18, 0));
-        header.setBorder(new EmptyBorder(12, 18, 12, 18));
-        JLabel title = new JLabel(AngioTool.TITLE);
-        title.setFont(title.getFont().deriveFont(Font.BOLD, UiTheme.fontSize(22f)));
-        header.add(title, BorderLayout.WEST);
+        header.setBorder(new EmptyBorder(8, 14, 8, 14));
+        header.setBackground(Color.WHITE);
+        JLabel title = new JLabel("AngioTool");
+        title.setFont(title.getFont().deriveFont(Font.BOLD, UiTheme.fontSize(20f)));
+        JLabel version = new JLabel(AngioTool.TITLE.replace("AngioTool ", ""));
+        version.setForeground(UiTheme.MUTED);
+        JPanel brand = UiTheme.row(title, Box.createHorizontalStrut(8), version);
+        brand.setOpaque(false);
+        header.add(brand, BorderLayout.WEST);
         btnLoadImageOrSubmit.setText(pluginCtx == null ? "Open image" : "Submit to ImageJ");
         btnLoadImageOrSubmit.setIcon(new FlatFileViewDirectoryIcon());
         btnStartBatch.setText("Batch");
@@ -365,36 +393,39 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
             UiTheme.row(btnLoadImageOrSubmit, btnHelp), BorderLayout.EAST);
         root.add(header, BorderLayout.NORTH);
 
-        JPanel thresholds = new JPanel(new GridLayout(1, 2, 12, 0));
-        thresholds.add(UiTheme.field("Minimum intensity", textMinIntensity));
-        thresholds.add(UiTheme.field("Maximum intensity", textMaxIntensity));
+        JPanel thresholds = new JPanel(new GridLayout(1, 2, 8, 0));
+        thresholds.add(textMinIntensity);
+        thresholds.add(textMaxIntensity);
+        textMinIntensity.getAccessibleContext().setAccessibleName("Minimum intensity");
+        textMaxIntensity.getAccessibleContext().setAccessibleName("Maximum intensity");
         textMinIntensity.setToolTipText("Inclusive lower threshold, 0 to 255");
         textMaxIntensity.setToolTipText("Inclusive upper threshold, 0 to 255");
         textSigmas.setToolTipText("Gaussian / Hessian sigma values, separated by commas");
-        JPanel normalCleanup = new JPanel(new GridLayout(2, 1, 0, 8));
+        JPanel normalCleanup = new JPanel(new GridLayout(2, 1, 0, 4));
         normalCleanup.add(elemFillHoles.buildRow());
         normalCleanup.add(elemRemoveParticles.buildRow());
-        JPanel binaryCleanup = new JPanel(new GridLayout(2, 1, 0, 8));
+        JPanel binaryCleanup = new JPanel(new GridLayout(2, 1, 0, 4));
         binaryCleanup.add(elemBinaryFillHoles.buildRow());
         binaryCleanup.add(elemBinaryRemoveParticles.buildRow());
         cleanupInputs.add(normalCleanup, "detection");
         cleanupInputs.add(binaryCleanup, "binary");
-        parameterTabs.addTab("Analysis", UiTheme.scrollColumn(
-            UiTheme.section("Vessel detection",
+        parameterTabs.addTab("Analysis", UiTheme.compactScrollColumn(
+            UiTheme.compactSection("Vessel detection",
                 cbUseBinaryMask,
-                UiTheme.field("Enhancement scales (sigma)", textSigmas), thresholds),
-            UiTheme.section("Mask cleanup", cleanupInputs, UiTheme.disclosure("Advanced cleanup",
+                UiTheme.inlineField("Enhancement scales (sigma)", textSigmas),
+                UiTheme.inlineField("Intensity: min / max", thresholds)),
+            UiTheme.compactSection("Mask cleanup", cleanupInputs, UiTheme.disclosure("Advanced cleanup",
                     elemMaxHoleLevelPercent.buildRow(), elemMinBoxnessPercent.buildRow(),
                     elemMinAreaLengthRatio.buildRow())),
-            UiTheme.section("Skeleton & measurements",
+            UiTheme.compactSection("Skeleton & measurements",
                 UiTheme.row(rbSkelFast, rbSkelThorough),
                 elemMaxSkelIterations.buildRow(),
                 elemPruneSkeleton.buildRow(),
                 elemMergeJunctions.buildRow(),
                 UiTheme.row(cbComputeThickness, cbComputeLacunarity),
                 cbNormalizeOutputData,
-                elemLinearScaleFactor.buildRow()),
-            UiTheme.section("Input size", elemResizeInputs.buildRow())
+                elemLinearScaleFactor.buildRow(),
+                elemResizeInputs.buildRow())
         ));
 
         JPanel colors = new JPanel(new GridLayout(1, 2, 12, 0));
@@ -403,27 +434,37 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         JPanel weights = new JPanel(new GridLayout(1, 2, 12, 0));
         weights.add(UiTheme.field("Hue weight", textHueWeight));
         weights.add(UiTheme.field("Brightness weight", textBrightnessWeight));
-        parameterTabs.addTab("Color", UiTheme.scrollColumn(
-            UiTheme.section("Color preprocessing", cbTransformColors, colors,
+        parameterTabs.addTab("Color", UiTheme.compactScrollColumn(
+            UiTheme.compactSection("Color preprocessing", cbTransformColors, colors,
                 UiTheme.field("Saturation (%)", textSaturationFactor), weights,
                 UiTheme.field("Brightness curve", textBrightnessSegments))
         ));
         elemTargetColor.panel.setEnabled(cbTransformColors.isSelected());
         elemVoidColor.panel.setEnabled(cbTransformColors.isSelected());
-        parameterTabs.addTab("Overlay", UiTheme.scrollColumn(
-            UiTheme.section("Visible layers", elemOutline.buildRow(),
+        parameterTabs.addTab("Overlay", UiTheme.compactScrollColumn(
+            UiTheme.compactSection("Visible layers", elemOutline.buildRow(),
                 elemSkeleton.buildRow(), elemBranches.buildRow(), elemConvexHull.buildRow()),
-            UiTheme.section("Image background", rbImageOriginal, rbImageIsolated, rbImageGray)
+            UiTheme.compactSection("Image background", rbImageOriginal, rbImageIsolated, rbImageGray)
         ));
         JPanel parameterPanel = new JPanel(new BorderLayout());
         parameterPanel.add(parameterTabs, BorderLayout.CENTER);
-        parameterPanel.setMinimumSize(UiTheme.size(370, 200));
-        parameterPanel.setPreferredSize(UiTheme.size(400, 700));
+        parameterPanel.setMinimumSize(UiTheme.size(330, 200));
+        parameterPanel.setPreferredSize(UiTheme.size(350, 700));
 
         JPanel footer = new JPanel(new BorderLayout(12, 10));
-        footer.setBorder(new EmptyBorder(12, 18, 14, 18));
+        footer.setBorder(new EmptyBorder(8, 12, 8, 12));
         btnReset.setText("Reset defaults");
-        footer.add(btnReset, BorderLayout.WEST);
+        btnLoadParameters.setToolTipText("Restore analysis, color and overlay settings from overlay-data.json; images stay unchanged until applied.");
+        btnApplyParameters.setToolTipText("Apply the current settings to every open image.");
+        cbAutoUpdate.setToolTipText("Update all open images after parameter edits. Loading JSON only fills in the controls.");
+        UiTheme.primary(btnApplyParameters);
+        btnReset.setBorderPainted(false);
+        btnReset.setContentAreaFilled(false);
+        btnReset.setForeground(UiTheme.MUTED);
+        JPanel parameterActions = new JPanel(new GridLayout(0, 1, 0, 7));
+        parameterActions.add(UiTheme.row(btnLoadParameters, btnApplyParameters));
+        parameterActions.add(UiTheme.row(cbAutoUpdate, btnReset));
+        footer.add(parameterActions, BorderLayout.NORTH);
         labelMemory.setForeground(UiTheme.MUTED);
         labelMemory.setHorizontalAlignment(SwingConstants.RIGHT);
         footer.add(labelMemory, BorderLayout.CENTER);
@@ -433,9 +474,9 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
         root.add(labelStatus, BorderLayout.SOUTH);
 
         JPanel empty = new JPanel(new GridBagLayout());
-        empty.setBackground(new Color(29, 32, 35));
+        empty.setBackground(UiTheme.CANVAS);
         JLabel emptyLabel = new JLabel("No image open");
-        emptyLabel.setForeground(new Color(175, 186, 193));
+        emptyLabel.setForeground(UiTheme.MUTED);
         emptyLabel.setFont(emptyLabel.getFont().deriveFont(UiTheme.fontSize(18f)));
         empty.add(emptyLabel);
         imageTabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
@@ -443,18 +484,58 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
             Component selected = imageTabs.getSelectedComponent();
             if (selected instanceof ImagingWindow)
                 ((ImagingWindow)selected).requestFocusInWindow();
+            showSelectedMeasurements();
         });
         imageArea.add(empty, "empty");
         imageArea.add(imageTabs, "images");
         imageCards.show(imageArea, "empty");
         imageArea.setMinimumSize(UiTheme.size(600, 200));
+        measurementsArea.setMinimumSize(UiTheme.size(280, 100));
+        measurementsArea.setPreferredSize(UiTheme.size(350, 450));
+        measurementsArea.setVisible(false);
+        measurementsWidth = measurementsArea.getPreferredSize().width;
+        resultsWorkspace.setLeftComponent(imageArea);
+        resultsWorkspace.setRightComponent(measurementsArea);
+        resultsWorkspace.setResizeWeight(1.0);
+        resultsWorkspace.setContinuousLayout(true);
+        resultsWorkspace.setBorder(BorderFactory.createEmptyBorder());
+        resultsWorkspace.setDividerSize(0);
         mainWorkspace.setLeftComponent(parameterPanel);
-        mainWorkspace.setRightComponent(imageArea);
+        mainWorkspace.setRightComponent(resultsWorkspace);
         mainWorkspace.setResizeWeight(0);
         mainWorkspace.setContinuousLayout(true);
         mainWorkspace.setBorder(BorderFactory.createEmptyBorder());
         root.add(mainWorkspace, BorderLayout.CENTER);
         return root;
+    }
+
+    void showSelectedMeasurements()
+    {
+        boolean wasVisible = measurementsArea.isVisible();
+        if (wasVisible && resultsWorkspace.getWidth() > 0)
+            measurementsWidth = Math.max(measurementsArea.getMinimumSize().width,
+                resultsWorkspace.getWidth() - resultsWorkspace.getDividerLocation() -
+                resultsWorkspace.getDividerSize());
+        Component selected = imageTabs.getSelectedComponent();
+        ImagingWindow image = selected instanceof ImagingWindow ? (ImagingWindow)selected : null;
+        boolean visible = image != null && image.cbShowStats.isSelected();
+        measurementsArea.removeAll();
+        if (visible)
+            measurementsArea.add(image.statistics, BorderLayout.CENTER);
+        measurementsArea.setVisible(visible);
+        resultsWorkspace.setDividerSize(visible ? UiTheme.size(6, 0).width : 0);
+        measurementsArea.revalidate();
+        resultsWorkspace.revalidate();
+        resultsWorkspace.repaint();
+        if (visible && !wasVisible)
+            initializeMeasurementsDivider();
+    }
+
+    void initializeMeasurementsDivider()
+    {
+        if (measurementsArea.isVisible())
+            resultsWorkspace.setDividerLocation(Math.max(imageArea.getMinimumSize().width,
+                resultsWorkspace.getWidth() - measurementsWidth - resultsWorkspace.getDividerSize()));
     }
 
     void attachImage(ImagingWindow image)
@@ -506,15 +587,18 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
     private void bindParameterEvents(Component component)
     {
         if (component instanceof JSpinner) {
-            ((JSpinner)component).addChangeListener(e ->
-                EventQueue.invokeLater(this::maybeUpdateImagingWindows));
+            ((JSpinner)component).addChangeListener(e -> {
+                if (!updatingUi && !loadingParameters)
+                    EventQueue.invokeLater(this::maybeUpdateImagingWindows);
+            });
             JFormattedTextField editor = ((JSpinner.DefaultEditor)((JSpinner)component)
                 .getEditor()).getTextField();
             editor.addFocusListener(this);
             editor.addKeyListener(this);
             return;
         }
-        if (component instanceof AbstractButton)
+        if (component instanceof AbstractButton && !Boolean.TRUE.equals(
+                ((AbstractButton)component).getClientProperty("AngioTool.presentationOnly")))
             ((AbstractButton)component).addActionListener(this);
         if (component instanceof JTextField) {
             component.addFocusListener(this);
@@ -534,6 +618,8 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
     @Override
     public void actionPerformed(ActionEvent evt)
     {
+        if (updatingUi || loadingParameters)
+            return;
         Object source = evt.getSource();
         if (pluginCtx != null && source == btnLoadImageOrSubmit)
             submitOverlayedImage();
@@ -543,11 +629,19 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
             openBatchWindow();
         else if (source == btnHelp)
             openHelpWindow();
+        else if (source == btnLoadParameters)
+            loadParameters();
+        else if (source == btnApplyParameters)
+            applyParameters();
+        else if (source == cbAutoUpdate) {
+            if (cbAutoUpdate.isSelected())
+                applyParameters();
+            else
+                showPendingParameters();
+        }
         else if (source == btnReset)
         {
-            if (JOptionPane.showConfirmDialog(this, "Reset all analysis and overlay parameters?",
-                    "Reset defaults", JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION)
-                setAnalysisUi(AnalyzerParameters.defaults());
+            setAnalysisUi(AnalyzerParameters.defaults());
         }
         else if (source == cbUseBinaryMask) {
             updateInputModeControls();
@@ -733,23 +827,114 @@ public class AngioToolGui2 extends JFrame implements ColorElement.Listener, Acti
 
     void maybeUpdateImagingWindows()
     {
-        if (updatingUi)
+        if (updatingUi || loadingParameters)
+            return;
+        if (!cbAutoUpdate.isSelected()) {
+            showPendingParameters();
+            return;
+        }
+        applyParameters();
+    }
+
+    void applyParameters()
+    {
+        if (updatingUi || loadingParameters)
             return;
         AnalyzerParameters params = validatedParams();
         if (params == null)
             return;
 
-        if (latestAnalyzerParams != null && params.equals(latestAnalyzerParams)) {
-            updateMemoryMonitor();
-            return;
-        }
-
-        latestAnalyzerParams = params;
-
         for (ImagingWindow iw : imagingWindows)
-            iw.updateImage(params);
+            if (iw.needsParameterUpdate(params))
+                iw.updateImage(params);
+
+        labelStatus.setText(imagingWindows.isEmpty() ? "Parameters ready for the next image or batch." :
+            "Parameters applied to " + imagingWindows.size() + " image(s).");
 
         updateMemoryMonitor();
+    }
+
+    private void showPendingParameters()
+    {
+        labelStatus.setForeground(UiTheme.MUTED);
+        labelStatus.setText("Manual update | Click Apply parameters to update all open images.");
+        labelStatus.setToolTipText(null);
+    }
+
+    private void loadParameters()
+    {
+        if (loadingParameters)
+            return;
+        // Pause automatic events while the chooser/reader is active, without changing the user's switch.
+        loadingParameters = true;
+        JFileChooser chooser = Misc.createFileChooser();
+        chooser.setDialogTitle("Load parameters from AngioTool JSON");
+        chooser.setCurrentDirectory(new File(parameterPath));
+        chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("AngioTool JSON (*.json)", "json"));
+        int choice = chooser.showOpenDialog(this);
+        if (choice != JFileChooser.APPROVE_OPTION) {
+            loadingParameters = false;
+            return;
+        }
+        File file = chooser.getSelectedFile();
+        parameterPath = file.getAbsoluteFile().getParent();
+        btnLoadParameters.setEnabled(false);
+        btnApplyParameters.setEnabled(false);
+        disableParameterEditing(parameterTabs);
+        btnReset.setEnabled(false);
+        cbAutoUpdate.setEnabled(false);
+        labelStatus.setForeground(UiTheme.MUTED);
+        labelStatus.setText("Reading parameter snapshot...");
+        new SwingWorker<AnalyzerParameterImporter.Result, Void>() {
+            @Override
+            protected AnalyzerParameterImporter.Result doInBackground() throws Exception
+            {
+                return AnalyzerParameterImporter.load(file);
+            }
+
+            @Override
+            protected void done()
+            {
+                restoreParameterEditing();
+                try {
+                    AnalyzerParameterImporter.Result result = get();
+                    setAnalysisUi(result.parameters, false);
+                    String status = "Loaded " + file.getName() + " | Click Apply parameters to update open images.";
+                    labelStatus.setText(status);
+                    labelStatus.setToolTipText("Source: " + result.programVersion);
+                }
+                catch (Exception ex) {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    labelStatus.setForeground(UiTheme.ERROR);
+                    labelStatus.setText("Parameters were not loaded; current settings are unchanged.");
+                    JOptionPane.showMessageDialog(AngioToolGui2.this, cause.getMessage(),
+                        "Could not load parameters", JOptionPane.ERROR_MESSAGE);
+                }
+                finally {
+                    btnLoadParameters.setEnabled(true);
+                    btnApplyParameters.setEnabled(true);
+                    btnReset.setEnabled(true);
+                    cbAutoUpdate.setEnabled(true);
+                    loadingParameters = false;
+                }
+            }
+        }.execute();
+    }
+
+    private void disableParameterEditing(Component component)
+    {
+        parameterEnabledStates.put(component, component.isEnabled());
+        component.setEnabled(false);
+        if (component instanceof Container)
+            for (Component child : ((Container)component).getComponents())
+                disableParameterEditing(child);
+    }
+
+    private void restoreParameterEditing()
+    {
+        for (Map.Entry<Component, Boolean> entry : parameterEnabledStates.entrySet())
+            entry.getKey().setEnabled(entry.getValue());
+        parameterEnabledStates.clear();
     }
 
     public void closeImagingWindow(ImagingWindow window)

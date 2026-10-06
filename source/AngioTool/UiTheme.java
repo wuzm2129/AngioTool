@@ -8,11 +8,13 @@ import javax.swing.border.EmptyBorder;
 
 public final class UiTheme
 {
-    public static final Color BACKGROUND = new Color(245, 247, 248);
-    public static final Color TEXT = new Color(35, 42, 47);
-    public static final Color MUTED = new Color(99, 111, 119);
-    public static final Color ACCENT = new Color(0, 116, 126);
-    public static final Color BORDER = new Color(220, 226, 229);
+    public static final Color BACKGROUND = new Color(245, 246, 247);
+    public static final Color TEXT = new Color(43, 49, 56);
+    public static final Color MUTED = new Color(107, 116, 125);
+    public static final Color ACCENT = new Color(70, 99, 121);
+    public static final Color ACCENT_SOFT = new Color(232, 238, 242);
+    public static final Color BORDER = new Color(223, 228, 232);
+    public static final Color CANVAS = new Color(236, 239, 242);
     public static final Color ERROR = new Color(172, 49, 49);
 
     private UiTheme() {}
@@ -26,9 +28,30 @@ public final class UiTheme
         UIManager.put("Label.foreground", TEXT);
         UIManager.put("Component.focusColor", ACCENT);
         UIManager.put("Component.accentColor", ACCENT);
+        UIManager.put("Component.borderColor", BORDER);
+        UIManager.put("Component.focusedBorderColor", ACCENT);
+        UIManager.put("Button.background", Color.WHITE);
+        UIManager.put("Button.hoverBackground", BACKGROUND);
+        UIManager.put("Button.focusedBackground", ACCENT_SOFT);
+        UIManager.put("ToggleButton.background", Color.WHITE);
+        UIManager.put("ToggleButton.selectedBackground", ACCENT_SOFT);
+        UIManager.put("ToggleButton.selectedForeground", TEXT);
+        UIManager.put("ToggleButton.hoverBackground", BACKGROUND);
+        UIManager.put("CheckBox.icon.checkmarkColor", TEXT);
+        UIManager.put("CheckBox.icon.selectedBorderColor", MUTED);
+        UIManager.put("CheckBox.icon.focusedBorderColor", ACCENT);
+        UIManager.put("CheckBox.icon.hoverBorderColor", ACCENT);
+        UIManager.put("CheckBox.icon.focusedBackground", ACCENT_SOFT);
+        UIManager.put("CheckBox.icon.background", Color.WHITE);
+        UIManager.put("CheckBox.icon.selectedBackground", Color.WHITE);
         UIManager.put("TabbedPane.underlineColor", ACCENT);
+        UIManager.put("TabbedPane.selectedBackground", Color.WHITE);
+        UIManager.put("TabbedPane.selectedForeground", TEXT);
+        UIManager.put("TabbedPane.hoverColor", ACCENT_SOFT);
+        UIManager.put("Table.selectionBackground", ACCENT_SOFT);
+        UIManager.put("Table.selectionForeground", TEXT);
         UIManager.put("Button.arc", 8);
-        UIManager.put("Component.arc", 6);
+        UIManager.put("Component.arc", 8);
         UIManager.put("TextComponent.arc", 6);
         UIManager.put("Component.focusWidth", 1);
         UIManager.put("ScrollBar.width", 10);
@@ -44,6 +67,7 @@ public final class UiTheme
     public static JPanel row(Component... items)
     {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEADING, 6, 0));
+        panel.setOpaque(false);
         for (Component item : items)
             panel.add(item);
         return panel;
@@ -61,27 +85,51 @@ public final class UiTheme
 
     public static JPanel section(String title, JComponent... rows)
     {
-        JPanel panel = new JPanel() {
+        return section(title, false, rows);
+    }
+
+    public static JPanel compactSection(String title, JComponent... rows)
+    {
+        return section(title, true, rows);
+    }
+
+    public static JPanel inlineField(String title, JComponent control)
+    {
+        JPanel panel = new JPanel(new BorderLayout(8, 0));
+        JLabel label = new JLabel(title);
+        label.setLabelFor(control);
+        panel.add(label, BorderLayout.WEST);
+        panel.add(control, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private static JPanel section(String title, boolean compact, JComponent... rows)
+    {
+        JPanel panel = new Surface(null, compact) {
             @Override public Dimension getMaximumSize()
             {
                 return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
             }
         };
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(new EmptyBorder(16, 18, 12, 18));
+        panel.setBorder(compact ? new EmptyBorder(8, 12, 6, 12) : new EmptyBorder(16, 18, 12, 18));
         JLabel heading = new JLabel(title);
         heading.setFont(heading.getFont().deriveFont(Font.BOLD, UIScale.scale(14f)));
+        if (compact)
+            heading.setForeground(TEXT);
         Dimension headingSize = heading.getPreferredSize();
         heading.setPreferredSize(new Dimension(headingSize.width + 12, headingSize.height + 2));
         heading.setMaximumSize(new Dimension(Integer.MAX_VALUE, headingSize.height + 2));
         heading.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(heading);
-        panel.add(Box.createVerticalStrut(12));
+        panel.add(Box.createVerticalStrut(compact ? 6 : 12));
         for (JComponent row : rows) {
+            if (compact)
+                transparentPanels(row);
             row.setAlignmentX(Component.LEFT_ALIGNMENT);
             row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
             panel.add(row);
-            panel.add(Box.createVerticalStrut(8));
+            panel.add(Box.createVerticalStrut(compact ? 3 : 8));
         }
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return panel;
@@ -97,10 +145,11 @@ public final class UiTheme
         };
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         JToggleButton toggle = new JToggleButton(title);
+        toggle.putClientProperty("AngioTool.presentationOnly", Boolean.TRUE);
         toggle.setIcon(new com.formdev.flatlaf.icons.FlatTreeCollapsedIcon());
         toggle.setBorderPainted(false);
         toggle.setContentAreaFilled(false);
-        toggle.setMargin(new Insets(4, 0, 4, 0));
+        toggle.setMargin(new Insets(2, 0, 2, 0));
         toggle.setAlignmentX(Component.LEFT_ALIGNMENT);
         JPanel content = column();
         content.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -108,7 +157,7 @@ public final class UiTheme
             row.setAlignmentX(Component.LEFT_ALIGNMENT);
             row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
             content.add(row);
-            content.add(Box.createVerticalStrut(8));
+            content.add(Box.createVerticalStrut(4));
         }
         content.setVisible(false);
         toggle.addActionListener(e -> {
@@ -125,15 +174,68 @@ public final class UiTheme
 
     public static JScrollPane scrollColumn(JComponent... sections)
     {
+        return scrollColumn(false, sections);
+    }
+
+    public static JScrollPane compactScrollColumn(JComponent... sections)
+    {
+        return scrollColumn(true, sections);
+    }
+
+    private static JScrollPane scrollColumn(boolean compact, JComponent... sections)
+    {
         JPanel body = new ScrollableColumn();
-        for (JComponent section : sections)
+        if (compact)
+            body.setBorder(new EmptyBorder(6, 8, 6, 8));
+        for (JComponent section : sections) {
             body.add(section);
+            if (compact)
+                body.add(Box.createVerticalStrut(6));
+        }
         body.add(Box.createVerticalGlue());
         JScrollPane scroll = new JScrollPane(body);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.getVerticalScrollBar().setUnitIncrement(20);
         return scroll;
+    }
+
+    private static void transparentPanels(Component component)
+    {
+        if (component instanceof JPanel && !(component instanceof RoundedPanel))
+            ((JPanel)component).setOpaque(false);
+        if (component instanceof Container)
+            for (Component child : ((Container)component).getComponents())
+                transparentPanels(child);
+    }
+
+    public static class Surface extends JPanel
+    {
+        private final boolean decorated;
+
+        public Surface(LayoutManager layout) { this(layout, true); }
+
+        private Surface(LayoutManager layout, boolean decorated)
+        {
+            super(layout);
+            this.decorated = decorated;
+            setOpaque(!decorated);
+        }
+
+        @Override protected void paintComponent(Graphics graphics)
+        {
+            super.paintComponent(graphics);
+            if (!decorated)
+                return;
+            Graphics2D g = (Graphics2D)graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(Color.WHITE);
+            int arc = UiTheme.size(12, 0).width;
+            g.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, arc, arc);
+            g.setColor(BORDER);
+            g.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, arc, arc);
+            g.dispose();
+        }
     }
 
     private static final class ScrollableColumn extends JPanel implements Scrollable
@@ -154,6 +256,11 @@ public final class UiTheme
         button.setBackground(ACCENT);
         button.setForeground(Color.WHITE);
         button.setFont(button.getFont().deriveFont(Font.BOLD));
+        java.util.Map<String, Object> style = new java.util.HashMap<>();
+        style.put("hoverBackground", new Color(60, 86, 106));
+        style.put("pressedBackground", new Color(51, 73, 91));
+        style.put("focusedBackground", ACCENT);
+        button.putClientProperty("FlatLaf.style", style);
     }
 
     public static void tool(JButton button, String tooltip)
