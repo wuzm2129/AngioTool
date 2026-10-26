@@ -1,3 +1,41 @@
+# AngioTool 2.3.0 验证记录
+
+日期：2026-10-26。环境：当前 Linux aarch64 服务器，临时解压的 Ubuntu ARM64 OpenJDK 21.0.12.1，Python 3，编译目标 Java 8。未修改系统 Java 安装。最终 JAR SHA-256：`7dd6034c51e25e6cf897d47b33a7aeba2afbab8f3af290df54f633eef07be816`。
+
+## 新增范围
+
+无界面 CLI、单文件/单目录/递归输入、JSON 参数恢复与显式覆盖、顺序分析、固定 PNG/JSON/XLSX 输出、冲突预检、覆盖、失败继续/停止、结构化运行报告和退出码。GUI 和 CLI 共用底层分析及导出，无参数保留桌面入口。源码和使用约定见 [CLI_CN.md](CLI_CN.md)。未改变分割、骨架或指标算法。
+
+## 最终构建验证
+
+- `python3 compile.py`：通过，只有既有 Java 8 目标过时和 unchecked 提示。
+- `python3 benchmarks/run_regression.py --jar AngioTool2.3.0.jar`：全部 11 项通过，JSON/XLSX 格式检查通过；受保护根目录 JAR 哈希保持不变。最终结果在 `verification/regression-j6qscks1/summary.json`。
+- `python3 benchmarks/run_cli_tests.py --jar AngioTool2.3.0.jar`：34 次 CLI 命令及额外受限文件大小的输出失败子进程检查通过。所有 CLI 子进程强制 headless、清除 DISPLAY/WAYLAND_DISPLAY、隔离 user.home 并设置超时。测试包括帮助/版本、非法参数、NaN/Infinity/百分比溢出、参数文件优先级与显式关闭、空掩膜、中文路径、坏图继续、fail-fast、目录递归、排除自身输出、同名异扩展、覆盖保护、可选产物清理、空目录、符号链接循环和输出子路径拒绝、无效 JSON、输出写入失败。
+- 5 组 2.2.3 基线对照：二值/Tubeness × Zha84/Lee94 四组（含 resize、测量倍率、剪枝/合并及归一化），另含仓库真实示例图默认参数。独立测试入口编译并运行于旧发布 JAR；掩膜/骨架 PNG 文件逐字节一致，JSON 递归比较语义，排除版本/导出日期时间，数值容差为 1e-10。最终 CLI 日志在 `verification/cli-46s3m4dr/commands.json`，汇总在同目录 `summary.json`。
+- 最终 JAR 的 `UiSmokeTest`：普通和 `-Dflatlaf.uiScale=1.5` 均通过，日志为 `verification/release-2.3.0/ui.log`、`ui-150.log`。通过临时 Xvfb 执行，GUI 测试隔离用户目录，截图在对应 `ui/`、`ui-150/`；不是新的 UI 改版。
+- 无参数 `java -jar AngioTool2.3.0.jar` 在隔离用户目录和虚拟显示下持续运行 5 秒，无异常，再由测试终止：`verification/release-2.3.0/gui-entry.log`。
+- `git diff --check`：通过。2.2.3 发布包哈希仍为 `f096259e7985f18a4d8b4afad25d235e058843d25820429162211b811f145fe7`。
+
+GUI 复现（先安装 JDK、Xvfb，再替换测试类目录）：
+
+```bash
+xvfb-run -a java -cp verification/regression-j6qscks1/test-classes:AngioTool2.3.0.jar \
+  AngioTool.UiSmokeTest verification/release-2.3.0/ui
+xvfb-run -a java -Dflatlaf.uiScale=1.5 \
+  -cp verification/regression-j6qscks1/test-classes:AngioTool2.3.0.jar \
+  AngioTool.UiSmokeTest verification/release-2.3.0/ui-150
+```
+
+本机为避免系统安装，JDK/Xvfb 及其依赖均下载并解包至 `/tmp/angiotool-jdk`。临时 Xvfb 的编译器路径改指向 `/tmp/axb/xkbcomp`，以使用解包后的键盘编译工具；只影响验证环境，不进入项目产物。显示号为 `:91`，禁用 TCP。临时依赖不是仓库的一部分，服务器重启或清理 `/tmp` 后需要重新准备 Java。
+
+## 验证边界
+
+未在真实 Java 8 运行时、本轮 Windows/macOS、真实 ImageJ/Fiji 或 Microsoft Excel 中运行。Xvfb 自动化不代替人工桌面验收。CLI 对照证明和既有实现一致，不证明研究样本的生物学准确性。尚不支持断点恢复、多输入根、多图并行、逐帧图像分析或并发进程共用输出目录。磁盘错误可能留下部分图像产物，失败/未执行图像也可能保留上一轮结果，必须检查本轮报告及退出码；其他研究方法限制继承下面历史记录。原始验证输出仍按仓库规则不纳入 Git。
+
+---
+
+以下为 2.2.3 及更早版本的历史验证记录。
+
 # AngioTool 2.2.3 验证记录
 
 日期：2026-10-06。验证对象为正式产物 `AngioTool2.2.3.jar`。Windows / Microsoft OpenJDK 21.0.8，编译目标 Java 8；class major version 为 52。

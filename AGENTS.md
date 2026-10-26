@@ -6,8 +6,8 @@ AngioTool 2 is a Java 8 desktop application with experimental ImageJ plugin supp
 
 ## Build, Test, and Development Commands
 
-- `python compile.py` — requires Python 3 and a JDK (`java` and `javac` on `PATH`); expands `.tj` templates, compiles with `--release=8`, writes classes to `build/`, and creates the current release JAR (`AngioTool2.2.3.jar`).
-- `java -jar AngioTool2.2.3.jar` — launches the current standalone release after a successful build.
+- `python compile.py` — requires Python 3 and a JDK (`java` and `javac` on `PATH`); expands `.tj` templates, compiles with `--release=8`, writes classes to `build/`, and creates the current release JAR (`AngioTool2.3.0.jar`).
+- `java -jar AngioTool2.3.0.jar` — launches the current standalone release after a successful build.
 - `python buildexe.py <path-to-tcc>` — legacy native Windows launcher build; it still reads `AngioTool2.jar` and is not adapted to current versioned JARs. Do not use it to package the current release without updating that workflow. It requires TCC, MinGW resource compiler, and JDK JNI headers.
 
 ## Version and Build Artifact Rule
@@ -22,7 +22,7 @@ Use four-space indentation, braces on the next line for classes and methods, and
 
 No JUnit suite or coverage threshold is configured. Treat `python compile.py` as the baseline compile check, then smoke-test the JAR with representative images and any affected ImageJ/plugin path. For performance-sensitive changes, compile and run a targeted benchmark, for example `javac -d build benchmarks/FiltersBenchmark.java` followed by `java -cp build FiltersBenchmark`.
 
-Run `python benchmarks/run_regression.py` to build an isolated verification JAR and execute the headless regression suite, or `python benchmarks/run_regression.py --jar AngioTool2.2.3.jar` to test a release artifact. Logs and generated fixtures are saved under `verification/regression-*`; see `VALIDATION_CN.md` for coverage and limits.
+Run `python benchmarks/run_regression.py` to build an isolated verification JAR and execute the headless regression suite, or `python benchmarks/run_regression.py --jar AngioTool2.3.0.jar` to test a release artifact. Logs and generated fixtures are saved under `verification/regression-*`; see `VALIDATION_CN.md` for coverage and limits.
 
 ## Analysis Pipeline & Metrics
 

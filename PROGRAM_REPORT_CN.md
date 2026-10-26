@@ -1,3 +1,7 @@
+# AngioTool 2.3.0 CLI 更新
+
+2026-10-26：新增 `Cli` 无界面编排层，在任何桌面初始化前分流带参数启动。CLI 顺序执行并复用 `Analyzer`、参数导入、叠加绘制及 JSON/XLSX 导出，不调用 GUI 批处理入口，不读取用户偏好。无参数仍启动桌面；底层算法与指标定义继承 2.2.3。使用及失败语义见 [CLI 指南](CLI_CN.md)，测试证据见 [验证记录](VALIDATION_CN.md)。以下为继承的 2.2.3 程序报告。
+
 # AngioTool 2.2.3 程序报告
 
 > **2026-10-06：2.2.3 正式版本**：增加 JSON 参数恢复、用户控制的 `Auto update` 开关及 `Apply parameters`。导入恢复分析、颜色与叠加设置，但只填入界面，不更新现有图片或切换自动更新开关。本版取消恢复默认确认框及导入成功信息框，失败提示保留；源码构建默认输出独立 `AngioTool2.2.3.jar`，独立 JAR 的回归及 GUI 验证记录见 [VALIDATION_CN.md](VALIDATION_CN.md)。操作说明见 [用户指南](USER_GUIDE_CN.md#52-参数更新与-json-配置恢复223)。

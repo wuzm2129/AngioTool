@@ -17,8 +17,8 @@ import javax.swing.ImageIcon;
 
 public class AngioTool
 {
-    public static final String TITLE = "AngioTool 2.2.3";
-    public static final String VERSION = "AngioTool 2.2.3 (2026-10-06)";
+    public static final String TITLE = "AngioTool 2.3.0";
+    public static final String VERSION = "AngioTool 2.3.0 (2026-10-26)";
     public static final String PREFS_TXT = "AT_Prefs.txt";
     public static final String BATCH_TXT = "AT_BatchPrefs.txt";
     public static final String VIEW_PREFS_TXT = "AT_ViewPrefs.txt";
@@ -41,6 +41,11 @@ public class AngioTool
 
     public static void main(String[] args)
     {
+        if (args.length > 0) {
+            System.setProperty("java.awt.headless", "true");
+            System.exit(Cli.run(args, System.out, System.err));
+            return;
+        }
         // Load Lee94 lookup table on program start
         preloadLee94();
         EventQueue.invokeLater(AngioTool::initializeGuiFromMain);

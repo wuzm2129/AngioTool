@@ -372,7 +372,7 @@ public class OverlayDataExporter
         writer.write("  }");
     }
 
-    private static void writeUiParameters(Writer writer, AnalyzerParameters params) throws IOException
+    static void writeUiParameters(Writer writer, AnalyzerParameters params) throws IOException
     {
         writer.write("  \"uiParameters\": {\n");
         writeUiAnalysisParameters(writer, params);
@@ -646,7 +646,7 @@ public class OverlayDataExporter
         writer.write(value != null && Double.isFinite(value.doubleValue()) ? value.toString() : "null");
     }
 
-    private static void writeJsonString(Writer writer, String value) throws IOException
+    static void writeJsonString(Writer writer, String value) throws IOException
     {
         writer.write("\"");
         if (value != null) {

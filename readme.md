@@ -1,4 +1,24 @@
-# AngioTool 2.2.3
+# AngioTool 2.3.0
+
+Version 2.3.0 adds a headless command-line interface while preserving the desktop
+entry when started without arguments. Analysis algorithms and metric definitions
+are inherited from 2.2.3. The CLI uses explicit defaults/JSON parameters rather
+than desktop preferences, runs images sequentially, and exports PNG artifacts,
+JSON, a fresh XLSX workbook and a machine-readable run report.
+
+```bash
+java -jar AngioTool2.3.0.jar --help
+java -jar AngioTool2.3.0.jar analyze --input image.png --output output/
+java -jar AngioTool2.3.0.jar analyze --input images/ --recursive --output output/
+```
+
+See [CLI usage, parameters and failure semantics](CLI_CN.md) and
+[2.3.0 validation](VALIDATION_CN.md). Build with `python3 compile.py`;
+run CLI integration checks with
+`python3 benchmarks/run_cli_tests.py --jar AngioTool2.3.0.jar`.
+The older release notes below describe the inherited desktop features.
+
+## AngioTool 2.2.3 release history
 
 Version 2.2.3 removes the Reset defaults confirmation and the successful
 parameter-import information dialog. Load parameters... reports success in the
