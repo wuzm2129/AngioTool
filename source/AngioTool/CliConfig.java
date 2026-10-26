@@ -302,8 +302,12 @@ final class CliConfig
             if (Misc.isGrayscale(p.voidRemapColor.getRGB())) errors.add("parameters.voidRemapColor: must have hue");
             float distance = Math.abs(Misc.getHue(p.targetRemapColor.getRGB()) - Misc.getHue(p.voidRemapColor.getRGB()));
             if (Math.min(distance, 6 - distance) < 0.05f) errors.add("parameters.voidRemapColor: too close to target hue");
-            if (!PreprocessColor.computeBrightnessTable(null, p.brightnessLineSegments, p.brightnessLineSegments.length / 2))
-                errors.add("parameters.brightnessLineSegments: invalid brightness curve");
+            Set<Integer> xs = new HashSet<>();
+            boolean duplicate = false;
+            for (int i = 0; i + 1 < p.brightnessLineSegments.length; i += 2)
+                if (!xs.add(p.brightnessLineSegments[i])) duplicate = true;
+            if (duplicate || xs.size() < 2 || !PreprocessColor.computeBrightnessTable(null, p.brightnessLineSegments, p.brightnessLineSegments.length / 2))
+                errors.add("parameters.brightnessLineSegments: need at least two unique x coordinates and a positive maximum x");
         }
         return errors;
     }

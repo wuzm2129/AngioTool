@@ -1,3 +1,27 @@
+# AngioTool 2.3.2 执行计划与批处理扩展验证
+
+日期：2026-10-26；当前Linux ARM64 / OpenJDK21.0.12.1，Python3。版本化JAR SHA-256：`63ba2a779da0fc68a5ff8b872534c0db46ad5ada99712be85cc56631fec96501`。检查 `AngioTool/Cli.class` major version为52（Java8目标），不代表Java8实际运行时已验证。
+
+## 验证结果
+
+- `python3 compile.py`通过，仅既有目标过时及unchecked提示。
+- `python3 benchmarks/run_regression.py --jar AngioTool2.3.2.jar`：原有11项全部通过，JSON/XLSX检查通过，已有版本化JAR哈希均未变；`verification/regression-mief1gzh/summary.json`。
+- `python3 benchmarks/run_cli_tests.py --jar AngioTool2.3.2.jar`：34次兼容命令及额外输出失败进程检查通过，5组2.2.3基线掩膜/骨架/JSON指标对照通过；`verification/cli-e5dx67bf/summary.json`。
+- `python3 benchmarks/run_config_tests.py --jar AngioTool2.3.2.jar`：53字段、33次配置命令通过，包含schema/全字段/休眠往返及显式重复亮度x坐标拒绝；`verification/config-i2knmvk0/summary.json`。未改变schema1字段名或2.3.0简写语义。
+- `python3 benchmarks/run_plan_tests.py --jar AngioTool2.3.2.jar`：48次命令通过；`verification/plan-krnxc4ga/summary.json`。覆盖纯dry-run、文件无写入、坏图不解码、计划/实际输出一致、条件骨架、六种导出家族、归一化家族组合、未选普通文件/目录/链接保持不变、覆盖冲突一致、输出父目录保护、多根同名、稳定命名空间、反转输入顺序实际分析一致、真实路径去重、重叠目录/显式文件归属、BOM清单及相对路径实际执行、glob根匹配/目录匹配/问号/includeOR/exclude优先、生效配置与来源。导出选择和多输入不改变相同参数下的mask字节或指标。
+- 最终JAR的普通和150% `UiSmokeTest`均通过，日志为 `verification/release-2.3.2/ui.log`、`ui-150.log`，截图在对应目录。无参数启动隔离用户目录、运行5秒后由测试终止，无异常：`verification/release-2.3.2/gui-entry.log`。
+- `git diff --check`通过；2.3.1、2.3.0与2.2.3 JAR SHA-256分别仍为 `b0d1e09af87bdb9efdd95b5b0788842998e732bb9de11707b8dc856408ca51bb`、`7dd6034c51e25e6cf897d47b33a7aeba2afbab8f3af290df54f633eef07be816`、`f096259e7985f18a4d8b4afad25d235e058843d25820429162211b811f145fe7`。
+
+所有CLI子进程使用headless、无DISPLAY/WAYLAND_DISPLAY、隔离user.home和超时；GUI使用临时Xvfb。复现入口见 [CLI指南](CLI_CN.md)，参数定义见 [参数参考](CLI_PARAMETERS_CN.md)，修订及两阶段交付见 [计划](CLI_EXTENSION_PLAN_CN.md)。原始日志留在本机verification/，按仓库规则不纳入Git。
+
+## 边界
+
+dry-run只证明当时的枚举、参数和路径规划，不解码、分析或验证全部写权限/磁盘容量；运行时重查路径，但不保证并发文件系统变化安全。图像发布与整批输出不是事务；失败/未执行图像及显式未选产物可能保留旧文件，应以本轮报告为准。多个进程不得共写同一输出目录。
+
+本轮不新增Windows/macOS、Java8实际运行时、ImageJ/Fiji、原生Excel、人工GUI或研究标注集准确性证据。多图并行、断点恢复、每图独立配置、多帧和服务化仍按计划延后。临时JDK/Xvfb位于/tmp，系统清理后需重新准备，详细准备记录见2.3.0验证部分。
+
+---
+
 # AngioTool 2.3.1 完整配置验证
 
 日期：2026-10-26；Linux ARM64 / OpenJDK 21.0.12.1，Java 8 字节码。版本化 JAR SHA-256：`b0d1e09af87bdb9efdd95b5b0788842998e732bb9de11707b8dc856408ca51bb`。

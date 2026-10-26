@@ -1,4 +1,15 @@
-# AngioTool 2.3.1
+# AngioTool 2.3.2
+
+Version 2.3.2 adds repeatable inputs and UTF-8 input lists, deterministic root
+namespaces, include/exclude globs, selective exports and a shared dry-run execution
+plan. Unselected artifacts are preserved; reports record actual written paths
+and configuration provenance. All inputs share one configuration and run sequentially.
+
+```bash
+java -jar AngioTool2.3.2.jar config defaults --output parameters.json
+java -jar AngioTool2.3.2.jar analyze --input dataset-a/ --input dataset-b/ \
+  --recursive --include '**/*.png' --exports json,mask --output output/ --dry-run
+```
 
 Version 2.3.1 adds complete CLI coverage for all 53 analysis/display parameters,
 a strict schema-1 configuration format and `config defaults/validate/resolve`.
@@ -12,15 +23,15 @@ than desktop preferences, runs images sequentially, and exports PNG artifacts,
 JSON, a fresh XLSX workbook and a machine-readable run report.
 
 ```bash
-java -jar AngioTool2.3.1.jar --help
-java -jar AngioTool2.3.1.jar analyze --input image.png --output output/
-java -jar AngioTool2.3.1.jar analyze --input images/ --recursive --output output/
+java -jar AngioTool2.3.2.jar --help
+java -jar AngioTool2.3.2.jar analyze --input image.png --output output/
+java -jar AngioTool2.3.2.jar analyze --input images/ --recursive --output output/
 ```
 
 See [CLI usage, parameters and failure semantics](CLI_CN.md) and
 [Current validation](VALIDATION_CN.md). Build with `python3 compile.py`;
 run CLI integration checks with
-`python3 benchmarks/run_cli_tests.py --jar AngioTool2.3.1.jar`.
+`python3 benchmarks/run_cli_tests.py --jar AngioTool2.3.2.jar`.
 The older release notes below describe the inherited desktop features.
 
 ## AngioTool 2.2.3 release history

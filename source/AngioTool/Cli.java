@@ -15,14 +15,11 @@ import java.util.*;
 /** Standalone, headless orchestration. Never reads desktop preferences. */
 public final class Cli
 {
-    private static final String[] IMAGE_FILES = {"result.png", "result vessel-mask.png",
-        "result raw-skeleton.png", "result pruned-skeleton.png", "result overlay-data.json",
-        "result normalized-data.json"};
     private static final Set<String> FLAGS = new HashSet<>(Arrays.asList(
-        "--recursive", "--overwrite", "--fail-fast"));
+        "--recursive", "--overwrite", "--fail-fast", "--dry-run"));
     private static final Set<String> VALUES = new HashSet<>(Arrays.asList(
         "--input", "--output", "--parameters", "--mode", "--scale", "--resize",
-        "--skeleton", "--prune", "--merge", "--normalize"));
+        "--skeleton", "--prune", "--merge", "--normalize", "--exports", "--input-list", "--include", "--exclude"));
 
     private Cli() {}
 
@@ -36,8 +33,14 @@ public final class Cli
             return config(args, out, err);
         if ((args.length == 1 && "--help".equals(args[0])) ||
                 (args.length == 2 && "analyze".equals(args[0]) && "--help".equals(args[1]))) {
-            out.println("Usage: java -jar AngioTool2.3.1.jar analyze --input FILE|DIR --output DIR [options]\n"
-                + "  --parameters FILE   Load an overlay-data.json parameter snapshot\n"
+            out.println("Usage: java -jar AngioTool2.3.2.jar analyze --input FILE|DIR --output DIR [options]\n"
+                + "  --parameters FILE   Load schema-1 JSON or an overlay-data.json snapshot\n"
+                + "  --input FILE|DIR    Repeat for multiple roots; one shared configuration\n"
+                + "  --input-list FILE   UTF-8 paths, relative to list directory (repeatable)\n"
+                + "  --include GLOB      Repeatable; relative to owning root; **/*.png includes root files\n"
+                + "  --exclude GLOB      Repeatable; exclusion takes priority\n"
+                + "  --exports LIST      overlay,mask,raw-skeleton,pruned-skeleton,json,xlsx\n"
+                + "  --dry-run           Print JSON plan without decoding or writing\n"
                 + "  --recursive         Scan subdirectories (never follow symbolic links)\n"
                 + "  --overwrite         Replace generated files; never append a workbook\n"
                 + "  --fail-fast         Stop after the first image failure\n"
@@ -57,20 +60,14 @@ public final class Cli
             return 0;
         }
         try {
-            Map<String, String> options = parse(args);
+            Options options = parse(args);
             AnalyzerParameters params = parameters(options);
-            Path input = requiredPath(options, "--input").toRealPath();
-            Path output = requiredPath(options, "--output").toFile().getCanonicalFile().toPath();
-            if (!Files.isRegularFile(input) && !Files.isDirectory(input))
-                throw new IllegalArgumentException("Input must be a file or directory");
-            if (input.equals(output) || input.startsWith(output))
-                throw new IllegalArgumentException("Output must not contain the input");
-            List<Path> files = enumerate(input, output, options.containsKey("--recursive"));
-            if (files.isEmpty())
-                throw new IllegalArgumentException("No supported images found");
-            Path root = Files.isDirectory(input) ? input : input.getParent();
-            preflight(output, files, root, options.containsKey("--overwrite"));
-            return analyze(files, root, output, params, options.containsKey("--fail-fast"), out, err);
+            CliPlan plan = new CliPlan(options, params);
+            if (options.containsKey("--dry-run")) {
+                out.println(plan.json(params));
+                return 0;
+            }
+            return analyze(plan, params, out, err);
         }
         catch (IllegalArgumentException | IOException ex) {
             err.println("Configuration error: " + ex.getMessage());
@@ -78,16 +75,29 @@ public final class Cli
         }
     }
 
-    private static Map<String, String> parse(String[] args)
+    static final class Options extends LinkedHashMap<String, String>
+    {
+        final Map<String, List<String>> lists = new LinkedHashMap<>();
+        String configurationSource = "defaults";
+        String sourceVersion;
+        List<String> all(String key)
+        {
+            List<String> values = lists.get(key);
+            return values == null ? Collections.<String>emptyList() : values;
+        }
+    }
+
+    private static Options parse(String[] args)
     {
         if (args.length == 0 || !"analyze".equals(args[0]))
             throw new IllegalArgumentException("Expected analyze; use --help");
-        Map<String, String> options = new LinkedHashMap<>();
+        Options options = new Options();
         for (int i = 1; i < args.length; i++) {
             String key = args[i];
             if (!FLAGS.contains(key) && !VALUES.contains(key) && !CliConfig.OPTIONS.containsKey(key))
                 throw new IllegalArgumentException("Unknown option: " + key);
-            if (options.containsKey(key))
+            boolean repeated = Arrays.asList("--input", "--input-list", "--include", "--exclude").contains(key);
+            if (options.containsKey(key) && !repeated)
                 throw new IllegalArgumentException("Repeated option: " + key);
             String value = "true";
             if (VALUES.contains(key) || CliConfig.OPTIONS.containsKey(key)) {
@@ -96,11 +106,15 @@ public final class Cli
                 value = args[i];
             }
             options.put(key, value);
+            if (repeated) {
+                if (!options.lists.containsKey(key)) options.lists.put(key, new ArrayList<String>());
+                options.lists.get(key).add(value);
+            }
         }
         return options;
     }
 
-    private static Path requiredPath(Map<String, String> options, String key)
+    static Path requiredPath(Map<String, String> options, String key)
     {
         if (!options.containsKey(key))
             throw new IllegalArgumentException("Required: " + key);
@@ -109,8 +123,16 @@ public final class Cli
 
     private static AnalyzerParameters parameters(Map<String, String> options) throws IOException
     {
-        AnalyzerParameters p = options.containsKey("--parameters") ?
-            CliConfig.load(requiredPath(options, "--parameters")).parameters : AnalyzerParameters.defaults();
+        AnalyzerParameters p = AnalyzerParameters.defaults();
+        if (options.containsKey("--parameters")) {
+            Path source = requiredPath(options, "--parameters").toRealPath();
+            CliConfig.Loaded loaded = CliConfig.load(source);
+            p = loaded.parameters;
+            if (options instanceof Options) {
+                ((Options)options).configurationSource = source.toString();
+                ((Options)options).sourceVersion = loaded.sourceVersion;
+            }
+        }
         CliConfig.apply(p, options);
         List<String> errors = CliConfig.errors(p);
         if (!errors.isEmpty()) throw new IllegalArgumentException(String.join("\n", errors));
@@ -135,7 +157,7 @@ public final class Cli
             System.arraycopy(args, 2, parseArgs, 1, args.length - 2);
             Map<String, String> options = parse(parseArgs);
             for (String key : options.keySet()) {
-                boolean setting = VALUES.contains(key) && !Arrays.asList("--input", "--output", "--parameters").contains(key)
+                boolean setting = Arrays.asList("--mode", "--skeleton", "--scale", "--resize", "--prune", "--merge", "--normalize").contains(key)
                     || CliConfig.OPTIONS.containsKey(key);
                 boolean allowed = action.equals("validate") ? key.equals("--parameters") :
                     key.equals("--output") || key.equals("--overwrite") ||
@@ -180,7 +202,7 @@ public final class Cli
         return name.matches(".*\\.(png|jpg|jpeg|bmp|gif|tif|tiff|ppm|pgm|pbm)$");
     }
 
-    private static List<Path> enumerate(Path input, final Path output, boolean recursive) throws IOException
+    static List<Path> enumerate(Path input, final Path output, boolean recursive) throws IOException
     {
         final List<Path> files = new ArrayList<>();
         if (Files.isRegularFile(input)) {
@@ -203,11 +225,6 @@ public final class Cli
         return files;
     }
 
-    private static Path imageFolder(Path output, Path root, Path input)
-    {
-        return output.resolve("images").resolve(root.relativize(input));
-    }
-
     static void checkTarget(Path path, boolean overwrite) throws IOException
     {
         for (Path parent = path; parent != null; parent = parent.getParent()) {
@@ -220,33 +237,25 @@ public final class Cli
             throw new IllegalArgumentException("Output conflict: " + path + " (use --overwrite for generated files)");
     }
 
-    private static void preflight(Path output, List<Path> files, Path root, boolean overwrite) throws IOException
-    {
-        checkTarget(output.resolve("run-report.json"), overwrite);
-        checkTarget(output.resolve("results.xlsx"), overwrite);
-        checkTarget(output.resolve("normalized-results.xlsx"), overwrite);
-        for (Path file : files)
-            for (String name : IMAGE_FILES)
-                checkTarget(imageFolder(output, root, file).resolve(name), overwrite);
-    }
-
-    private static int analyze(List<Path> files, Path root, Path output, AnalyzerParameters p,
-        boolean failFast, PrintStream out, PrintStream err)
+    private static int analyze(CliPlan plan, AnalyzerParameters p, PrintStream out, PrintStream err)
     {
         long started = System.nanoTime();
         List<String> records = new ArrayList<>();
+        List<String> sharedWritten = new ArrayList<>();
         int succeeded = 0, failed = 0;
         boolean stopped = false;
         try {
-            Files.createDirectories(output);
-            SpreadsheetWriter sheet = Analyzer.createWriterWithNewSheet(null, output.toFile(), "results.xlsx");
-            sheet.shouldSaveAfterEveryRow = false;
-            SpreadsheetWriter normalized = p.shouldNormalizeOutputData ?
-                BatchProcessing.createNormalizedBatchWriterWithNewSheet(null, output.toFile(), "normalized-results.xlsx", p) : null;
+            plan.preflight();
+            Files.createDirectories(plan.output);
+            SpreadsheetWriter sheet = plan.exports.contains("xlsx") ?
+                Analyzer.createWriterWithNewSheet(null, plan.output.toFile(), "results.xlsx") : null;
+            if (sheet != null) sheet.shouldSaveAfterEveryRow = false;
+            SpreadsheetWriter normalized = sheet != null && p.shouldNormalizeOutputData ?
+                BatchProcessing.createNormalizedBatchWriterWithNewSheet(null, plan.output.toFile(), "normalized-results.xlsx", p) : null;
             if (normalized != null) normalized.shouldSaveAfterEveryRow = false;
-            for (Path file : files) {
+            for (CliPlan.Entry entry : plan.entries) {
                 if (stopped) {
-                    records.add(record(file, "not-run", false, "Stopped after previous failure", 0));
+                    records.add(record(plan, entry, "not-run", false, "Stopped after previous failure", 0, Collections.<String>emptyList()));
                     continue;
                 }
                 long imageStarted = System.nanoTime();
@@ -255,26 +264,40 @@ public final class Cli
                 Path staging = null;
                 Analyzer.Stats stats = null;
                 Exception failure = null;
-                err.println("Analyzing " + file);
+                List<String> written = new ArrayList<>();
+                err.println("Analyzing " + entry.input);
                 try {
-                    image = ImageFile.acquireImageForAnalysis(file.toString(), p.effectiveResizeFactor());
+                    plan.checkEntry(entry);
+                    image = ImageFile.acquireImageForAnalysis(entry.input.toString(), p.effectiveResizeFactor());
                     if (image == null) throw new IOException("Unsupported or unreadable image");
-                    stats = Analyzer.analyze(data, file.toFile(), image, p, new ISliceRunner.Series());
-                    Path folder = imageFolder(output, root, file);
-                    Files.createDirectories(folder);
-                    staging = Files.createTempDirectory(output, ".cli-image-");
+                    stats = Analyzer.analyze(data, entry.input.toFile(), image, p, new ISliceRunner.Series());
+                    staging = Files.createTempDirectory(plan.output, ".cli-image-");
                     String base = staging.resolve("result").toString();
-                    OverlayDataExporter.export(base, p, data, stats, image.width, image.height, image.brightestChannel);
-                    Analyzer.drawOverlay(p, data.convexHull, data.skelResult, data.analysisImage.buf,
-                        image.pixels, image.pixels, null, image.width, image.height, image.brightestChannel);
-                    ImageFile.saveImage(image, "png", base + ".png");
-                    for (String name : IMAGE_FILES) {
+                    OverlayDataExporter.exportSelected(base, p, data, stats, image.width, image.height, image.brightestChannel, plan.exports);
+                    if (plan.exports.contains("overlay")) {
+                        Analyzer.drawOverlay(p, data.convexHull, data.skelResult, data.analysisImage.buf,
+                            image.pixels, image.pixels, null, image.width, image.height, image.brightestChannel);
+                        ImageFile.saveImage(image, "png", base + ".png");
+                    }
+                    for (String name : plan.imageWrites) {
                         Path generated = staging.resolve(name);
-                        Path destination = folder.resolve(name);
-                        if (Files.exists(generated))
-                            Files.move(generated, destination, StandardCopyOption.REPLACE_EXISTING);
-                        else
+                        Path destination = entry.folder.resolve(name);
+                        if (Files.exists(generated)) {
+                            Cli.checkTarget(destination, plan.overwrite);
+                            Files.createDirectories(entry.folder);
+                            if (plan.overwrite) Files.move(generated, destination, StandardCopyOption.REPLACE_EXISTING);
+                            else Files.move(generated, destination);
+                            written.add(destination.toString());
+                        }
+                        else if (!plan.explicitExports) {
+                            Cli.checkTarget(destination, plan.overwrite);
                             Files.deleteIfExists(destination);
+                        }
+                    }
+                    for (String name : plan.imageDeletes) {
+                        Path destination = entry.folder.resolve(name);
+                        Cli.checkTarget(destination, plan.overwrite);
+                        Files.deleteIfExists(destination);
                     }
                 }
                 catch (Exception ex) {
@@ -285,41 +308,49 @@ public final class Cli
                     if (image != null) ImageFile.releaseImage(image);
                     data.nullify();
                     if (staging != null) {
-                        for (String name : IMAGE_FILES) Files.deleteIfExists(staging.resolve(name));
+                        for (String name : CliPlan.IMAGE_OUTPUTS.keySet()) Files.deleteIfExists(staging.resolve(name));
                         Files.delete(staging);
                     }
                 }
                 if (failure == null) {
-                    // A shared workbook failure is fatal, rather than a recoverable image failure.
                     succeeded++;
-                    records.add(record(file, "success", stats.valid, stats.invalidReason, elapsed(imageStarted)));
-                    Analyzer.writeResultToSheet(sheet, p, stats);
+                    records.add(record(plan, entry, "success", stats.valid, stats.invalidReason, elapsed(imageStarted), written));
+                    // Shared output failures abort the task rather than pretending to be bad images.
+                    if (sheet != null) Analyzer.writeResultToSheet(sheet, p, stats);
                     if (normalized != null) BatchProcessing.writeNormalizedBatchResultToSheet(normalized, p, stats);
                 }
                 else {
                     failed++;
-                    records.add(record(file, "failed", false, failure.toString(), elapsed(imageStarted)));
+                    records.add(record(plan, entry, "failed", false, failure.toString(), elapsed(imageStarted), written));
                     err.println("Failed: " + failure);
-                    stopped = failFast;
+                    stopped = plan.failFast;
                 }
             }
-            sheet.save();
-            if (normalized != null) normalized.save();
-            else Files.deleteIfExists(output.resolve("normalized-results.xlsx"));
+            // A shared file was already created for headers; recheck its parent/link safety.
+            if (sheet != null) {
+                checkTarget(plan.output.resolve("results.xlsx"), true);
+                sheet.save();
+                sharedWritten.add(plan.output.resolve("results.xlsx").toString());
+            }
+            if (normalized != null) {
+                checkTarget(plan.output.resolve("normalized-results.xlsx"), true);
+                normalized.save();
+                sharedWritten.add(plan.output.resolve("normalized-results.xlsx").toString());
+            }
+            for (String name : plan.sharedDeletes) {
+                checkTarget(plan.output.resolve(name), plan.overwrite);
+                Files.deleteIfExists(plan.output.resolve(name));
+            }
             int code = failed == 0 ? 0 : 1;
-            String report = report(records, succeeded, failed, files.size(), code, elapsed(started), null, p);
-            saveReport(output, report);
-            out.println(report);
+            finishReport(plan, records, sharedWritten, succeeded, failed, code, elapsed(started), null, p, out);
             return code;
         }
         catch (Exception ex) {
             err.println("Output/task failure: " + ex);
             try {
-                for (int i = records.size(); i < files.size(); i++)
-                    records.add(record(files.get(i), "not-run", false, "Task aborted", 0));
-                String report = report(records, succeeded, failed, files.size(), 1, elapsed(started), ex.toString(), p);
-                saveReport(output, report);
-                out.println(report);
+                for (int i = records.size(); i < plan.entries.size(); i++)
+                    records.add(record(plan, plan.entries.get(i), "not-run", false, "Task aborted", 0, Collections.<String>emptyList()));
+                finishReport(plan, records, sharedWritten, succeeded, failed, 1, elapsed(started), ex.toString(), p, out);
             }
             catch (IOException reportError) { err.println("Cannot save report: " + reportError); }
             return 1;
@@ -327,12 +358,24 @@ public final class Cli
         finally { Analyzer.threadPool.shutdownNow(); }
     }
 
-    private static void saveReport(Path output, String report) throws IOException
+    private static void finishReport(CliPlan plan, List<String> records, List<String> sharedWritten,
+        int succeeded, int failed, int code, long millis, String error, AnalyzerParameters p, PrintStream out) throws IOException
+    {
+        checkTarget(plan.output.resolve("run-report.json"), plan.overwrite);
+        List<String> outputs = new ArrayList<>(sharedWritten);
+        outputs.add(plan.output.resolve("run-report.json").toString());
+        String text = report(plan, records, outputs, succeeded, failed, code, millis, error, p);
+        saveReport(plan.output, text, plan.overwrite);
+        out.println(text);
+    }
+
+    private static void saveReport(Path output, String report, boolean overwrite) throws IOException
     {
         Path temporary = Files.createTempFile(output, ".cli-report-", ".json");
         try {
             Files.write(temporary, report.getBytes(StandardCharsets.UTF_8));
-            Files.move(temporary, output.resolve("run-report.json"), StandardCopyOption.REPLACE_EXISTING);
+            if (overwrite) Files.move(temporary, output.resolve("run-report.json"), StandardCopyOption.REPLACE_EXISTING);
+            else Files.move(temporary, output.resolve("run-report.json"));
         }
         finally { Files.deleteIfExists(temporary); }
     }
@@ -342,28 +385,46 @@ public final class Cli
         return (System.nanoTime() - started) / 1000000;
     }
 
-    private static String quote(String value) throws IOException
+    static String quote(String value) throws IOException
     {
         StringWriter writer = new StringWriter();
         OverlayDataExporter.writeJsonString(writer, value);
         return writer.toString();
     }
 
-    private static String record(Path file, String status, boolean valid, String reason, long millis) throws IOException
+    static String strings(Collection<String> values) throws IOException
     {
-        return "{\"input\":" + quote(file.toString()) + ",\"status\":" + quote(status)
-            + ",\"metricsValid\":" + valid + ",\"reason\":" + quote(reason) + ",\"elapsedMs\":" + millis + "}";
+        List<String> quoted = new ArrayList<>();
+        for (String value : values) quoted.add(quote(value));
+        return "[" + String.join(",", quoted) + "]";
     }
 
-    private static String report(List<String> records, int succeeded, int failed, int total,
-        int code, long millis, String error, AnalyzerParameters parameters) throws IOException
+    private static String record(CliPlan plan, CliPlan.Entry entry, String status, boolean valid, String reason,
+        long millis, Collection<String> written) throws IOException
+    {
+        return "{\"input\":" + quote(entry.input.toString()) + ",\"status\":" + quote(status)
+            + ",\"metricsValid\":" + valid + ",\"reason\":" + quote(reason) + ",\"elapsedMs\":" + millis
+            + ",\"outputDirectory\":" + quote(entry.folder.toString()) + ",\"relativeOutputDirectory\":"
+            + quote(plan.output.relativize(entry.folder).toString()) + ",\"outputs\":" + strings(written)
+            + ",\"notUpdated\":" + strings(plan.notUpdated(entry, written)) + "}";
+    }
+
+    private static String report(CliPlan plan, List<String> records, List<String> sharedWritten,
+        int succeeded, int failed, int code, long millis, String error, AnalyzerParameters parameters) throws IOException
     {
         StringWriter settings = new StringWriter();
         OverlayDataExporter.writeUiParameters(settings, parameters);
-        return "{\"configuration\":" + CliConfig.json(parameters).trim() + "," + settings.toString() + ",\"skeletonProcessing\":{\"pruneTerminalBranches\":"
+        List<String> retained = new ArrayList<>();
+        for (String name : Arrays.asList("results.xlsx", "normalized-results.xlsx")) {
+            Path path = plan.output.resolve(name);
+            if (Files.exists(path, LinkOption.NOFOLLOW_LINKS) && !sharedWritten.contains(path.toString())) retained.add(path.toString());
+        }
+        return "{\"configuration\":" + CliConfig.json(parameters).trim() + "," + settings.toString()
+            + ",\"configurationSource\":" + plan.provenance() + ",\"outputs\":" + strings(sharedWritten)
+            + ",\"notUpdated\":" + strings(retained) + ",\"skeletonProcessing\":{\"pruneTerminalBranches\":"
             + parameters.shouldPruneSkeleton + ",\"maxTerminalBranchLengthPx\":" + parameters.maxTerminalBranchLength
             + "},\"programVersion\":" + quote(AngioTool.VERSION) + ",\"exitCode\":" + code
-            + ",\"succeeded\":" + succeeded + ",\"failed\":" + failed + ",\"notRun\":" + (total - succeeded - failed)
+            + ",\"succeeded\":" + succeeded + ",\"failed\":" + failed + ",\"notRun\":" + (plan.entries.size() - succeeded - failed)
             + ",\"elapsedMs\":" + millis + ",\"taskError\":" + quote(error)
             + ",\"images\":[" + String.join(",", records) + "]}";
     }

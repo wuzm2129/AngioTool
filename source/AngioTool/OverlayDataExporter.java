@@ -37,6 +37,18 @@ public class OverlayDataExporter
             saveNormalizedJson(basePath + " normalized-data.json", params, data, stats, width, height, brightestChannel);
     }
 
+    static void exportSelected(String basePath, AnalyzerParameters params, Analyzer.Data data,
+        Analyzer.Stats stats, int width, int height, int brightestChannel, java.util.Set<String> exports) throws IOException
+    {
+        if (exports.contains("mask")) saveMaskImage(basePath + " vessel-mask.png", data.analysisImage.buf, width, height);
+        if (exports.contains("raw-skeleton") && data.rawSkeleton != null)
+            saveMaskImage(basePath + " raw-skeleton.png", data.rawSkeleton, width, height);
+        if (exports.contains("pruned-skeleton") && data.processedSkeleton != null)
+            saveMaskImage(basePath + " pruned-skeleton.png", data.processedSkeleton, width, height);
+        if (exports.contains("json")) saveOverlayJson(basePath + " overlay-data.json", params, data, stats, width, height, brightestChannel);
+        if (exports.contains("normalized-json")) saveNormalizedJson(basePath + " normalized-data.json", params, data, stats, width, height, brightestChannel);
+    }
+
     public static void saveNormalizedJson(
         String absPath,
         AnalyzerParameters params,

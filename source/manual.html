@@ -25,15 +25,19 @@ h3 {
 </style>
 </head>
 <body>
-<h1>AngioTool 2.3.1 - Manual</h1>
+<h1>AngioTool 2.3.2 - Manual</h1>
 <h2>Command line and complete configuration</h2>
 <p>Start without arguments for the desktop. For headless analysis use
-<code>java -jar AngioTool2.3.1.jar analyze --input image.png --output output/</code>.
+<code>java -jar AngioTool2.3.2.jar analyze --input image.png --output output/</code>.
 Use <code>--help</code> to list all parameter options. Every parameter is also
 available in a versioned standalone JSON configuration. Run <code>config defaults</code>
 to print defaults, <code>config validate --parameters file.json</code> to check a file,
 or <code>config resolve --parameters file.json</code> to print merged settings.
-Legacy overlay-data.json parameter snapshots remain supported.</p>
+Legacy overlay-data.json parameter snapshots remain supported. Repeat
+<code>--input</code> or use <code>--input-list paths.txt</code> for multiple roots.
+Use quoted <code>--include '**/*.png'</code> / <code>--exclude</code> globs to filter.
+<code>--exports json,mask</code> selects artifacts and preserves unselected files;
+<code>--dry-run</code> prints a plan without decoding images or writing files.</p>
 <h2>Skeleton measurements in 2.2.2</h2>
 <p>A single-pixel connection whose two neighbors belong to the same junction
 region is no longer counted as an external branch. This prevents an L-shaped

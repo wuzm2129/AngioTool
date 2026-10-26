@@ -35,7 +35,7 @@ def png(path, empty=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--jar', type=Path, default=ROOT/'AngioTool2.3.1.jar')
+    parser.add_argument('--jar', type=Path, default=ROOT/'AngioTool2.3.2.jar')
     args = parser.parse_args()
     jar = args.jar.resolve()
     (ROOT/'verification').mkdir(exist_ok=True)

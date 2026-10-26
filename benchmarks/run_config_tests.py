@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--jar', type=Path, default=ROOT/'AngioTool2.3.1.jar')
+    parser.add_argument('--jar', type=Path, default=ROOT/'AngioTool2.3.2.jar')
     args = parser.parse_args()
     jar = args.jar.resolve()
     (ROOT/'verification').mkdir(exist_ok=True)
@@ -83,7 +83,8 @@ def main():
     bad.write_text(json.dumps(dormant))
     assert run('config', 'validate', '--parameters', bad)['valid']
     for flags in [('--sigmas', '0,5'), ('--brightness-line-segments', '-1,0,100,100'),
-                  ('--outline-color', '#GG0000'), ('--threshold-low', '1.5')]:
+                  ('--outline-color', '#GG0000'), ('--threshold-low', '1.5'),
+                  ('--remap-colors', 'true', '--brightness-line-segments', '0,0,0,10,100,100')]:
         run('config', 'resolve', *flags, code=2)
     from run_cli_tests import png
     source = work/'mask.png'
