@@ -19,3 +19,6 @@ ij.txt
 
 # Local verification outputs
 verification/
+
+# Python integration-test import cache
+benchmarks/__pycache__/

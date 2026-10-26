@@ -223,7 +223,7 @@ public final class AnalyzerParameterImporter
     }
 
     /** Strict streaming JSON reader; unknown top-level data is validated and discarded. */
-    private static final class JsonReader
+    static final class JsonReader
     {
         private final BufferedReader reader;
         private int next;
@@ -240,6 +240,11 @@ public final class AnalyzerParameterImporter
 
         Map<String, Object> readConfiguration() throws IOException
         {
+            return readConfiguration(false);
+        }
+
+        Map<String, Object> readConfiguration(boolean retainTopKeys) throws IOException
+        {
             whitespace();
             expect('{');
             Map<String, Object> root = new LinkedHashMap<>();
@@ -253,9 +258,10 @@ public final class AnalyzerParameterImporter
                     whitespace();
                     expect(':');
                     boolean keep = key.equals("uiParameters") || key.equals("analysisParameters") ||
-                        key.equals("overlayParameters") || key.equals("skeletonProcessing") || key.equals("programVersion");
+                        key.equals("overlayParameters") || key.equals("skeletonProcessing") || key.equals("programVersion") ||
+                        key.equals("schemaVersion") || key.equals("parameters");
                     Object value = value(1, keep);
-                    if (keep)
+                    if (keep || retainTopKeys)
                         root.put(key, value);
                     whitespace();
                     if (next != ',')

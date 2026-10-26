@@ -1,3 +1,18 @@
+# AngioTool 2.3.1 完整配置验证
+
+日期：2026-10-26；Linux ARM64 / OpenJDK 21.0.12.1，Java 8 字节码。版本化 JAR SHA-256：`b0d1e09af87bdb9efdd95b5b0788842998e732bb9de11707b8dc856408ca51bb`。
+
+- `python3 compile.py`：通过，只有既有目标过时/unchecked提示。
+- `python3 benchmarks/run_regression.py --jar AngioTool2.3.1.jar`：原有11项回归全部通过，包含旧快照导入及JSON/XLSX格式检查；`verification/regression-jizi_w4m/summary.json`。
+- `python3 benchmarks/run_cli_tests.py --jar AngioTool2.3.1.jar`：34次命令及输出失败检查通过，5组2.2.3掩膜/骨架/指标对照通过；`verification/cli-xbyjmyml/summary.json`。
+- `python3 benchmarks/run_config_tests.py --jar AngioTool2.3.1.jar`：53字段、32次命令通过；严格schema/类型/重复键、字段级聚合范围错误、覆盖修复、简写隐式开关冲突、全参数CLI、旧快照转换、默认及非默认/休眠全字段往返；`verification/config-xl1_ae6z/summary.json`、`inventory.log`。`CliConfigTest`还在回归构建时编译，由配置集成脚本实际执行。
+- 最终JAR的 `UiSmokeTest` 普通和150%均通过；`verification/release-2.3.1/ui.log`、`ui-150.log`。使用前述临时JDK/Xvfb和隔离用户目录，未修改用户GUI配置。
+- `git diff --check`通过；回归脚本确认已有发布JAR未被替换。
+
+配置和CLI均不改变分析算法。新配置对业务范围在覆盖后检查，旧快照仍沿用原先验证语义。未新增Java8实际运行时、Windows/macOS、ImageJ/Fiji、原生Excel或生物学准确性证据。临时依赖、自动化GUI和发布日志保留边界继承下文。
+
+---
+
 # AngioTool 2.3.0 验证记录
 
 日期：2026-10-26。环境：当前 Linux aarch64 服务器，临时解压的 Ubuntu ARM64 OpenJDK 21.0.12.1，Python 3，编译目标 Java 8。未修改系统 Java 安装。最终 JAR SHA-256：`7dd6034c51e25e6cf897d47b33a7aeba2afbab8f3af290df54f633eef07be816`。

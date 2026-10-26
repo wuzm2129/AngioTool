@@ -3,7 +3,6 @@ package AngioTool;
 import Pixels.ArgbBuffer;
 import Pixels.ImageFile;
 import Utils.ISliceRunner;
-import Utils.RefVector;
 import Xlsx.SpreadsheetWriter;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -33,9 +32,11 @@ public final class Cli
             out.println(AngioTool.VERSION);
             return 0;
         }
+        if (args.length > 0 && "config".equals(args[0]))
+            return config(args, out, err);
         if ((args.length == 1 && "--help".equals(args[0])) ||
                 (args.length == 2 && "analyze".equals(args[0]) && "--help".equals(args[1]))) {
-            out.println("Usage: java -jar AngioTool2.3.0.jar analyze --input FILE|DIR --output DIR [options]\n"
+            out.println("Usage: java -jar AngioTool2.3.1.jar analyze --input FILE|DIR --output DIR [options]\n"
                 + "  --parameters FILE   Load an overlay-data.json parameter snapshot\n"
                 + "  --recursive         Scan subdirectories (never follow symbolic links)\n"
                 + "  --overwrite         Replace generated files; never append a workbook\n"
@@ -48,7 +49,11 @@ public final class Cli
                 + "  --normalize true|false\n"
                 + "Outputs: images/<relative input name>/result*, results.xlsx, run-report.json.\n"
                 + "Exit: 0 completed (possibly invalid metrics), 1 processing/output failure, 2 configuration error.\n"
+                + "Config: config defaults|validate|resolve [--parameters FILE] [--output FILE]\n"
+                + "All parameters: each name below accepts an explicit value. Arrays use commas.\n"
                 + "No arguments launches the desktop interface.");
+            for (CliConfig.Parameter p : CliConfig.PARAMETERS.values())
+                out.println("  " + p.option + " VALUE  [" + p.unit + "; active: " + p.enabledBy + "]");
             return 0;
         }
         try {
@@ -80,12 +85,12 @@ public final class Cli
         Map<String, String> options = new LinkedHashMap<>();
         for (int i = 1; i < args.length; i++) {
             String key = args[i];
-            if (!FLAGS.contains(key) && !VALUES.contains(key))
+            if (!FLAGS.contains(key) && !VALUES.contains(key) && !CliConfig.OPTIONS.containsKey(key))
                 throw new IllegalArgumentException("Unknown option: " + key);
             if (options.containsKey(key))
                 throw new IllegalArgumentException("Repeated option: " + key);
             String value = "true";
-            if (VALUES.contains(key)) {
+            if (VALUES.contains(key) || CliConfig.OPTIONS.containsKey(key)) {
                 if (++i >= args.length || args[i].startsWith("--"))
                     throw new IllegalArgumentException("Missing value for " + key);
                 value = args[i];
@@ -102,57 +107,71 @@ public final class Cli
         return Paths.get(options.get(key)).toAbsolutePath().normalize();
     }
 
-    private static double number(String value, boolean positive)
-    {
-        double result = Double.parseDouble(value);
-        if (!Double.isFinite(result) || (positive ? result <= 0 : result < 0))
-            throw new IllegalArgumentException("Expected a finite " + (positive ? "positive" : "nonnegative") + " number: " + value);
-        return result;
-    }
-
     private static AnalyzerParameters parameters(Map<String, String> options) throws IOException
     {
         AnalyzerParameters p = options.containsKey("--parameters") ?
-            AnalyzerParameterImporter.load(requiredPath(options, "--parameters").toFile()).parameters :
-            AnalyzerParameters.defaults();
-        for (Map.Entry<String, String> entry : options.entrySet()) {
-            String value = entry.getValue();
-            switch (entry.getKey()) {
-                case "--mode":
-                    if (!value.equals("binary") && !value.equals("tubeness"))
-                        throw new IllegalArgumentException("Mode must be binary or tubeness");
-                    p.shouldUseBinaryMask = value.equals("binary"); break;
-                case "--skeleton":
-                    if (!value.equals("zha84") && !value.equals("lee94"))
-                        throw new IllegalArgumentException("Skeleton must be zha84 or lee94");
-                    p.shouldUseFastSkeletonizer = value.equals("zha84"); break;
-                case "--scale":
-                    p.linearScalingFactor = number(value, true);
-                    p.shouldApplyLinearScale = p.linearScalingFactor != 1; break;
-                case "--resize":
-                    p.resizingFactor = number(value, true);
-                    p.shouldResizeImage = p.resizingFactor != 1; break;
-                case "--prune":
-                    p.shouldPruneSkeleton = !value.equals("off");
-                    if (p.shouldPruneSkeleton) p.maxTerminalBranchLength = number(value, false);
-                    break;
-                case "--merge":
-                    p.shouldMergeNearbyJunctions = !value.equals("off");
-                    if (p.shouldMergeNearbyJunctions) p.maxJunctionMergeDistance = number(value, false);
-                    break;
-                case "--normalize":
-                    if (!value.equals("true") && !value.equals("false"))
-                        throw new IllegalArgumentException("Normalize must be true or false");
-                    p.shouldNormalizeOutputData = Boolean.parseBoolean(value); break;
-                default: break;
-            }
-        }
-        if (!Double.isFinite(p.linearScalingFactor * 100.0) || !Double.isFinite(p.resizingFactor * 100.0))
-            throw new IllegalArgumentException("Scale/resize cannot be represented as a finite percentage");
-        RefVector<String> errors = p.validate();
-        if (errors.size > 0)
-            throw new IllegalArgumentException(String.join("; ", Arrays.copyOf(errors.buf, errors.size)));
+            CliConfig.load(requiredPath(options, "--parameters")).parameters : AnalyzerParameters.defaults();
+        CliConfig.apply(p, options);
+        List<String> errors = CliConfig.errors(p);
+        if (!errors.isEmpty()) throw new IllegalArgumentException(String.join("\n", errors));
         return p;
+    }
+
+    private static int config(String[] args, PrintStream out, PrintStream err)
+    {
+        if (args.length == 2 && args[1].equals("--help")) {
+            out.println("config defaults [--output FILE] [--overwrite]\n"
+                + "config validate --parameters FILE\n"
+                + "config resolve [--parameters FILE] [parameter options] [--output FILE] [--overwrite]\n"
+                + "defaults/resolve output reloadable schema-1 JSON; validate outputs {valid,errors}.");
+            return 0;
+        }
+        try {
+            if (args.length < 2 || !Arrays.asList("defaults", "validate", "resolve").contains(args[1]))
+                throw new IllegalArgumentException("Expected config defaults, validate or resolve");
+            String action = args[1];
+            String[] parseArgs = new String[args.length - 1];
+            parseArgs[0] = "analyze";
+            System.arraycopy(args, 2, parseArgs, 1, args.length - 2);
+            Map<String, String> options = parse(parseArgs);
+            for (String key : options.keySet()) {
+                boolean setting = VALUES.contains(key) && !Arrays.asList("--input", "--output", "--parameters").contains(key)
+                    || CliConfig.OPTIONS.containsKey(key);
+                boolean allowed = action.equals("validate") ? key.equals("--parameters") :
+                    key.equals("--output") || key.equals("--overwrite") ||
+                    (action.equals("resolve") && (setting || key.equals("--parameters")));
+                if (!allowed) throw new IllegalArgumentException("Not supported by config " + action + ": " + key);
+            }
+            AnalyzerParameters p;
+            if (action.equals("validate")) {
+                p = CliConfig.load(requiredPath(options, "--parameters")).parameters;
+                List<String> errors = CliConfig.errors(p);
+                out.println(validationJson(errors));
+                err.println("Inactive parameters (preserved): " + String.join(", ", CliConfig.inactive(p)));
+                return errors.isEmpty() ? 0 : 2;
+            }
+            p = action.equals("defaults") ? AnalyzerParameters.defaults() : parameters(options);
+            String text = CliConfig.json(p);
+            if (options.containsKey("--output")) CliConfig.save(requiredPath(options, "--output"), text, options.containsKey("--overwrite"));
+            else out.print(text);
+            err.println("Inactive parameters (preserved): " + String.join(", ", CliConfig.inactive(p)));
+            return 0;
+        }
+        catch (IllegalArgumentException | IOException ex) {
+            if (args.length > 1 && args[1].equals("validate")) {
+                try { out.println(validationJson(Arrays.asList(ex.getMessage().split("\n")))); }
+                catch (IOException ignored) {}
+            }
+            err.println("Configuration error: " + ex.getMessage());
+            return 2;
+        }
+    }
+
+    private static String validationJson(List<String> errors) throws IOException
+    {
+        List<String> quoted = new ArrayList<>();
+        for (String error : errors) quoted.add(quote(error));
+        return "{\"valid\":" + errors.isEmpty() + ",\"errors\":[" + String.join(",", quoted) + "]}";
     }
 
     private static boolean supported(Path path)
@@ -189,7 +208,7 @@ public final class Cli
         return output.resolve("images").resolve(root.relativize(input));
     }
 
-    private static void checkTarget(Path path, boolean overwrite) throws IOException
+    static void checkTarget(Path path, boolean overwrite) throws IOException
     {
         for (Path parent = path; parent != null; parent = parent.getParent()) {
             if (Files.isSymbolicLink(parent))
@@ -341,7 +360,7 @@ public final class Cli
     {
         StringWriter settings = new StringWriter();
         OverlayDataExporter.writeUiParameters(settings, parameters);
-        return "{" + settings.toString() + ",\"skeletonProcessing\":{\"pruneTerminalBranches\":"
+        return "{\"configuration\":" + CliConfig.json(parameters).trim() + "," + settings.toString() + ",\"skeletonProcessing\":{\"pruneTerminalBranches\":"
             + parameters.shouldPruneSkeleton + ",\"maxTerminalBranchLengthPx\":" + parameters.maxTerminalBranchLength
             + "},\"programVersion\":" + quote(AngioTool.VERSION) + ",\"exitCode\":" + code
             + ",\"succeeded\":" + succeeded + ",\"failed\":" + failed + ",\"notRun\":" + (total - succeeded - failed)

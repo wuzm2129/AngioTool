@@ -1,16 +1,35 @@
-# AngioTool 2.3.0 命令行使用指南
+# AngioTool 2.3.1 命令行使用指南
 
 CLI 与桌面共用分析算法、参数快照和导出实现。无参数启动仍进入桌面；CLI 强制无界面，不加载 GUI 用户偏好。服务器只需兼容的 Java 运行时，无需显示器。源码构建及测试需要支持 `--release=8` 的 JDK（本次使用 ARM64 OpenJDK 21）。
+
+## 2.3.1 完整参数与配置
+
+全部 53 个参数均可通过 CLI 设置，完整名称、类型、单位和默认值见 [参数参考](CLI_PARAMETERS_CN.md)。开关显式使用 true/false，数值选项不隐式启用功能；2.3.0 简写仍保留其自动启用行为。简写和完整选项同时赋值同一字段会报错，与命令行顺序无关。
+
+```bash
+java -jar AngioTool2.3.1.jar config defaults --output parameters.json
+java -jar AngioTool2.3.1.jar config validate --parameters parameters.json
+java -jar AngioTool2.3.1.jar config resolve --parameters parameters.json \
+  --threshold-low 20 --sigmas 5,8,12 --output resolved.json
+java -jar AngioTool2.3.1.jar analyze --input image.png --output output/ \
+  --parameters resolved.json
+```
+
+独立配置格式为 `{ "schemaVersion": 1, "parameters": { ... }, "programVersion": "来源版本，可选" }`。参数名是稳定的 camelCase 字段名，省略字段补程序默认值；defaults/resolve 导出完整可重载配置。出现 schemaVersion 即按新格式解析，未知版本或字段不回退为旧快照。重复键、错误类型、非有限值被拒绝。颜色为六位十六进制，数组在 JSON 中为数组，在 CLI 中使用逗号分隔。
+
+新配置的格式/类型错误不可由 CLI 修复；业务范围错误可在 resolve/analyze 合并 CLI 后修复。validate 不接受参数覆盖，返回 `{valid, errors}` 并聚合字段路径错误。旧 overlay-data.json 保留原导入器先验证的规则，范围错误不支持覆盖修复。业务范围只检查激活参数；休眠参数保留并在配置命令 stderr 列出。亮度曲线配对、坐标 [0,100] 与有限百分比表示等结构安全条件始终检查，因为分析初始化也会读取曲线。
+
+defaults/resolve 默认写 stdout；使用 --output 时默认不覆盖，--overwrite 才替换普通文件。输出路径拒绝符号链接，不修改 GUI 偏好。
 
 ## 基本使用
 
 ```bash
-java -jar AngioTool2.3.0.jar --help
-java -jar AngioTool2.3.0.jar --version
-java -jar AngioTool2.3.0.jar analyze --input image.png --output output/
-java -jar AngioTool2.3.0.jar analyze --input images/ --recursive --output output/
-java -jar AngioTool2.3.0.jar analyze --input mask.png --output mask-output/ --mode binary
-java -jar AngioTool2.3.0.jar analyze --input image.png --output restored/ \
+java -jar AngioTool2.3.1.jar --help
+java -jar AngioTool2.3.1.jar --version
+java -jar AngioTool2.3.1.jar analyze --input image.png --output output/
+java -jar AngioTool2.3.1.jar analyze --input images/ --recursive --output output/
+java -jar AngioTool2.3.1.jar analyze --input mask.png --output mask-output/ --mode binary
+java -jar AngioTool2.3.1.jar analyze --input image.png --output restored/ \
   --parameters 'previous/result overlay-data.json' --prune off --merge off
 ```
 
@@ -32,7 +51,7 @@ java -jar AngioTool2.3.0.jar analyze --input image.png --output restored/ \
 | `--merge PX\|off` | 交汇点合并距离，分析图像像素，有限非负数；off 显式关闭 |
 | `--normalize true\|false` | 开启或关闭额外归一化 JSON/XLSX |
 
-其他完整参数通过桌面导出的 `overlay-data.json` 提供，首版不逐项映射到 CLI。无效选项、重复选项、缺失值及配置范围错误会在分析前拒绝。
+其他完整参数可通过新配置、旧快照或完整 CLI 选项提供。无效选项、重复选项、缺失值及配置范围错误会在分析前拒绝。
 
 ## 输出与覆盖
 
@@ -62,7 +81,7 @@ output/
 进度和错误写入 stderr，stdout 输出一个 JSON 运行报告，可重定向使用：
 
 ```bash
-java -jar AngioTool2.3.0.jar analyze --input images/ --output output/ \
+java -jar AngioTool2.3.1.jar analyze --input images/ --output output/ \
   > report.json 2> progress.log
 ```
 
@@ -80,8 +99,8 @@ java -jar AngioTool2.3.0.jar analyze --input images/ --output output/ \
 
 ```bash
 python3 compile.py
-python3 benchmarks/run_regression.py --jar AngioTool2.3.0.jar
-python3 benchmarks/run_cli_tests.py --jar AngioTool2.3.0.jar
+python3 benchmarks/run_regression.py --jar AngioTool2.3.1.jar
+python3 benchmarks/run_cli_tests.py --jar AngioTool2.3.1.jar
 ```
 
 CLI 集成脚本在 Linux 上运行，使用 Python 标准库（含 `resource`）和 JDK；清除显示环境、隔离用户目录，每次子进程设置超时，验证进程正常退出。结果写入 `verification/cli-*`。对照测试需要保留 `AngioTool2.2.3.jar`。实际测试结果与 GUI 验证边界见 `VALIDATION_CN.md`。

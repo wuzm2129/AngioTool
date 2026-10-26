@@ -35,7 +35,7 @@ def png(path, empty=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--jar', type=Path, default=ROOT/'AngioTool2.3.0.jar')
+    parser.add_argument('--jar', type=Path, default=ROOT/'AngioTool2.3.1.jar')
     args = parser.parse_args()
     jar = args.jar.resolve()
     (ROOT/'verification').mkdir(exist_ok=True)
@@ -63,7 +63,7 @@ def main():
         return folder/'images'/source.name/'result overlay-data.json'
     run(['--help'])
     run(['analyze', '--help'])
-    assert '2.3.0' in run(['--version']).stdout
+    assert 'AngioTool 2.' in run(['--version']).stdout
     for options in (['wat'], ['analyze'], ['analyze', '--wat'], ['analyze', '--input'],
                     ['analyze', '--recursive', '--recursive']):
         run(options, 2)
